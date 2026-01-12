@@ -1,0 +1,177 @@
+openapi: 3.0.3
+info:
+  title: Payment Service API
+  description: |
+    Payment Service handles payment processing for the Order Service.
+
+    **Note**: This service is external to your implementation. You should mock this service
+    when developing and testing your Order Service.
+  version: 1.0.0
+
+servers:
+  - url: http://payment-service:8083
+    description: Payment Service (Mock this in your implementation)
+
+paths:
+  /api/payments:
+    post:
+      summary: Create a payment
+      description: |
+        Initiates a payment request for an order.
+        Call this endpoint when an order is confirmed and ready for payment.
+      operationId: createPayment
+      tags:
+        - Payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+            example:
+              orderId: 3001
+              amount: 59.98
+              paymentMethod: "CREDIT_CARD"
+      responses:
+        '201':
+          description: Payment created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+              example:
+                id: 4001
+                orderId: 3001
+                amount: 59.98
+                status: "COMPLETED"
+                transactionId: "TXN-20240115-ABC123"
+                createdAt: "2024-01-15T10:30:00Z"
+        '400':
+          description: Invalid payment request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "INVALID_PAYMENT_REQUEST"
+                message: "Payment amount must be greater than 0"
+        '422':
+          description: Payment failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "PAYMENT_FAILED"
+                message: "Insufficient funds"
+
+  /api/payments/{paymentId}:
+    get:
+      summary: Get payment by ID
+      description: |
+        Retrieves payment information by payment ID.
+        Use this endpoint to check the status of a payment.
+      operationId: getPaymentById
+      tags:
+        - Payments
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          description: Unique identifier of the payment
+          schema:
+            type: integer
+            format: int64
+            example: 4001
+      responses:
+        '200':
+          description: Payment found successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+              example:
+                id: 4001
+                orderId: 3001
+                amount: 59.98
+                status: "COMPLETED"
+                transactionId: "TXN-20240115-ABC123"
+                createdAt: "2024-01-15T10:30:00Z"
+        '404':
+          description: Payment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "PAYMENT_NOT_FOUND"
+                message: "Payment with id 4001 not found"
+
+components:
+  schemas:
+    PaymentRequest:
+      type: object
+      required:
+        - orderId
+        - amount
+        - paymentMethod
+      properties:
+        orderId:
+          type: integer
+          format: int64
+          description: ID of the order to pay for
+        amount:
+          type: number
+          format: double
+          description: Payment amount
+        paymentMethod:
+          type: string
+          enum: [CREDIT_CARD, DEBIT_CARD, BANK_TRANSFER]
+          description: Payment method to use
+
+    Payment:
+      type: object
+      required:
+        - id
+        - orderId
+        - amount
+        - status
+        - transactionId
+        - createdAt
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier of the payment
+        orderId:
+          type: integer
+          format: int64
+          description: ID of the associated order
+        amount:
+          type: number
+          format: double
+          description: Payment amount
+        status:
+          type: string
+          enum: [PENDING, COMPLETED, FAILED, REFUNDED]
+          description: Current status of the payment
+        transactionId:
+          type: string
+          description: External transaction ID from payment processor
+        createdAt:
+          type: string
+          format: date-time
+          description: Timestamp when the payment was created
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message

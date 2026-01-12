@@ -1,0 +1,152 @@
+openapi: 3.0.3
+info:
+  title: Product Service API
+  description: |
+    Product Service provides product and inventory information for the Order Service.
+
+    **Note**: This service is external to your implementation. You should mock this service
+    when developing and testing your Order Service.
+  version: 1.0.0
+
+servers:
+  - url: http://product-service:8082
+    description: Product Service (Mock this in your implementation)
+
+paths:
+  /api/products/{productId}:
+    get:
+      summary: Get product by ID
+      description: |
+        Retrieves product information by product ID.
+        Use this endpoint to get product details and price information.
+      operationId: getProductById
+      tags:
+        - Products
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          description: Unique identifier of the product
+          schema:
+            type: integer
+            format: int64
+            example: 2001
+      responses:
+        '200':
+          description: Product found successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Product'
+              example:
+                id: 2001
+                name: "Wireless Mouse"
+                price: 29.99
+                status: "AVAILABLE"
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "PRODUCT_NOT_FOUND"
+                message: "Product with id 2001 not found"
+
+  /api/products/{productId}/stock:
+    get:
+      summary: Get product stock
+      description: |
+        Retrieves current stock quantity for a product.
+        Use this endpoint to check if there's enough inventory before creating an order.
+      operationId: getProductStock
+      tags:
+        - Products
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          description: Unique identifier of the product
+          schema:
+            type: integer
+            format: int64
+            example: 2001
+      responses:
+        '200':
+          description: Stock information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductStock'
+              example:
+                productId: 2001
+                quantity: 150
+                reservedQuantity: 10
+                availableQuantity: 140
+        '404':
+          description: Product not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    Product:
+      type: object
+      required:
+        - id
+        - name
+        - price
+        - status
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier of the product
+        name:
+          type: string
+          description: Name of the product
+        price:
+          type: number
+          format: double
+          description: Price of the product
+        status:
+          type: string
+          enum: [AVAILABLE, OUT_OF_STOCK, DISCONTINUED]
+          description: Current availability status of the product
+
+    ProductStock:
+      type: object
+      required:
+        - productId
+        - quantity
+        - reservedQuantity
+        - availableQuantity
+      properties:
+        productId:
+          type: integer
+          format: int64
+          description: Product ID
+        quantity:
+          type: integer
+          description: Total quantity in stock
+        reservedQuantity:
+          type: integer
+          description: Quantity reserved for pending orders
+        availableQuantity:
+          type: integer
+          description: Quantity available for new orders
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
