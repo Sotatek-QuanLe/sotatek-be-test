@@ -1,0 +1,480 @@
+package com.sotatek.order.service;
+
+import com.sotatek.order.client.MemberClient;
+import com.sotatek.order.client.PaymentClient;
+import com.sotatek.order.client.ProductClient;
+import com.sotatek.order.exception.*;
+import com.sotatek.order.model.dto.external.MemberResponse;
+import com.sotatek.order.model.dto.external.PaymentRequest;
+import com.sotatek.order.model.dto.external.PaymentResponse;
+import com.sotatek.order.model.dto.external.ProductResponse;
+import com.sotatek.order.model.dto.external.ProductStockResponse;
+import com.sotatek.order.model.dto.request.CreateOrderRequest;
+import com.sotatek.order.model.dto.request.OrderItemRequest;
+import com.sotatek.order.model.dto.request.UpdateOrderRequest;
+import com.sotatek.order.model.dto.response.OrderResponse;
+import com.sotatek.order.model.entity.Order;
+import com.sotatek.order.model.entity.OrderItem;
+import com.sotatek.order.model.enums.OrderStatus;
+import com.sotatek.order.model.enums.PaymentMethod;
+import com.sotatek.order.repository.OrderRepository;
+import com.sotatek.order.service.impl.OrderServiceImpl;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
+import java.math.BigDecimal;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+@SuppressWarnings("null")
+class OrderServiceTest {
+
+    @Mock
+    private OrderRepository orderRepository;
+    @Mock
+    private MemberClient memberClient;
+    @Mock
+    private ProductClient productClient;
+    @Mock
+    private PaymentClient paymentClient;
+
+    @InjectMocks
+    private OrderServiceImpl orderService;
+
+    private CreateOrderRequest createRequest;
+    private Order order;
+    private MemberResponse activeMember;
+    private ProductResponse availableProduct;
+    private ProductStockResponse abundantStock;
+    private PaymentResponse completedPayment;
+
+    @BeforeEach
+    void setUp() {
+        OrderItemRequest itemRequest = new OrderItemRequest();
+        itemRequest.setProductId("P001");
+        itemRequest.setQuantity(2);
+
+        createRequest = new CreateOrderRequest();
+        createRequest.setMemberId("M001");
+        createRequest.setItems(List.of(itemRequest));
+        createRequest.setPaymentMethod(PaymentMethod.CREDIT_CARD);
+
+        OrderItem orderItem = OrderItem.builder()
+                .productId("P001")
+                .productName("Mock Product P001")
+                .quantity(2)
+                .unitPrice(new BigDecimal("99.99"))
+                .subtotal(new BigDecimal("199.98"))
+                .build();
+
+        order = Order.builder()
+                .id(1L)
+                .memberId("M001")
+                .status(OrderStatus.PENDING)
+                .totalAmount(new BigDecimal("199.98"))
+                .paymentMethod(PaymentMethod.CREDIT_CARD)
+                .items(Collections.singletonList(orderItem))
+                .build();
+        orderItem.setOrder(order);
+
+        activeMember = MemberResponse.builder().id(1L).status("ACTIVE").build();
+        availableProduct = ProductResponse.builder().id(1L).name("Mock Product").price(new BigDecimal("99.99"))
+                .status("AVAILABLE").build();
+        abundantStock = ProductStockResponse.builder().productId("P001").availableQuantity(100).build();
+        completedPayment = PaymentResponse.builder().id(1L).status("COMPLETED").transactionId("TXN-123").build();
+    }
+
+    @Test
+    void createOrder_Success() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(availableProduct);
+        when(productClient.getStock(anyString())).thenReturn(abundantStock);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+        when(paymentClient.createPayment(any(PaymentRequest.class))).thenReturn(completedPayment);
+
+        OrderResponse response = orderService.createOrder(createRequest);
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.CONFIRMED, response.getStatus());
+        verify(orderRepository, times(2)).save(any(Order.class));
+    }
+
+    @Test
+    void createOrder_MemberInactive() {
+        activeMember.setStatus("INACTIVE");
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+
+        assertThrows(MemberInactiveException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
+    void createOrder_MemberNotFound() {
+        when(memberClient.getMember(anyString())).thenReturn(null);
+
+        assertThrows(MemberNotFoundException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
+    void createOrder_ProductUnavailable() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        availableProduct.setStatus("DISCONTINUED");
+        when(productClient.getProduct(anyString())).thenReturn(availableProduct);
+
+        assertThrows(ProductUnavailableException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
+    void createOrder_ProductNotFound() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(null);
+
+        assertThrows(ProductNotFoundException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
+    void createOrder_InsufficientStock() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(availableProduct);
+        abundantStock.setAvailableQuantity(1);
+        when(productClient.getStock(anyString())).thenReturn(abundantStock);
+
+        assertThrows(InsufficientStockException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
+    void createOrder_PaymentFailed() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(availableProduct);
+        when(productClient.getStock(anyString())).thenReturn(abundantStock);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+
+        PaymentResponse failedPayment = PaymentResponse.builder().id(1L).status("FAILED").build();
+        when(paymentClient.createPayment(any(PaymentRequest.class))).thenReturn(failedPayment);
+
+        assertThrows(PaymentFailedException.class, () -> orderService.createOrder(createRequest));
+        // Verify: 1st save (initial PENDING) + 2nd save (compensation PAYMENT_FAILED)
+        verify(orderRepository, times(2)).save(any(Order.class));
+    }
+
+    @Test
+    void createOrder_MultipleItems_Success() {
+        // Setup request with multiple items
+        OrderItemRequest item1 = new OrderItemRequest();
+        item1.setProductId("P001");
+        item1.setQuantity(2);
+
+        OrderItemRequest item2 = new OrderItemRequest();
+        item2.setProductId("P002");
+        item2.setQuantity(3);
+
+        createRequest.setItems(List.of(item1, item2));
+
+        // Mock responses for both products
+        ProductResponse product1 = ProductResponse.builder()
+                .id(1L).name("Product 1").price(new BigDecimal("10.50")).status("AVAILABLE").build();
+        ProductResponse product2 = ProductResponse.builder()
+                .id(2L).name("Product 2").price(new BigDecimal("5.99")).status("AVAILABLE").build();
+
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct("P001")).thenReturn(product1);
+        when(productClient.getProduct("P002")).thenReturn(product2);
+        when(productClient.getStock(anyString())).thenReturn(abundantStock);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+        when(paymentClient.createPayment(any(PaymentRequest.class))).thenReturn(completedPayment);
+
+        OrderResponse response = orderService.createOrder(createRequest);
+
+        assertNotNull(response);
+        // Verify totalAmount = (10.50 * 2) + (5.99 * 3) = 21.00 + 17.97 = 38.97
+        assertEquals(new BigDecimal("38.97"), response.getTotalAmount());
+    }
+
+    @Test
+    void createOrder_StockReturnsNull() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(availableProduct);
+        when(productClient.getStock(anyString())).thenReturn(null);
+
+        assertThrows(InsufficientStockException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
+    void createOrder_PaymentReturnsNull() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(availableProduct);
+        when(productClient.getStock(anyString())).thenReturn(abundantStock);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+        when(paymentClient.createPayment(any(PaymentRequest.class))).thenReturn(null);
+
+        assertThrows(PaymentFailedException.class, () -> orderService.createOrder(createRequest));
+        verify(orderRepository, times(2)).save(any(Order.class)); // PENDING + PAYMENT_FAILED
+    }
+
+    @Test
+    void getOrder_Success() {
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+
+        OrderResponse response = orderService.getOrder(1L);
+
+        assertNotNull(response);
+        assertEquals(1L, response.getId());
+        assertEquals("M001", response.getMemberId());
+    }
+
+    @Test
+    void getOrder_NotFound() {
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.empty());
+        assertThrows(OrderNotFoundException.class, () -> orderService.getOrder(1L));
+    }
+
+    @Test
+    void listOrders_Success() {
+        Page<Order> orderPage = new PageImpl<>(List.of(order));
+        when(orderRepository.findAll(any(PageRequest.class))).thenReturn(orderPage);
+
+        Page<OrderResponse> response = orderService.listOrders(PageRequest.of(0, 10));
+
+        assertNotNull(response);
+        assertEquals(1, response.getTotalElements());
+    }
+
+    @Test
+    void listOrders_Empty() {
+        when(orderRepository.findAll(any(PageRequest.class))).thenReturn(new PageImpl<>(Collections.emptyList()));
+        Page<OrderResponse> response = orderService.listOrders(PageRequest.of(0, 10));
+        assertNotNull(response);
+        assertTrue(response.getContent().isEmpty());
+    }
+
+    @Test
+    void listOrders_WithSorting_Success() {
+        Page<Order> orderPage = new PageImpl<>(List.of(order));
+        PageRequest pageRequest = PageRequest.of(0, 10, Sort.by("createdAt").descending());
+        when(orderRepository.findAll(pageRequest)).thenReturn(orderPage);
+
+        Page<OrderResponse> response = orderService.listOrders(pageRequest);
+
+        assertNotNull(response);
+        assertEquals(1, response.getTotalElements());
+        verify(orderRepository).findAll(pageRequest);
+    }
+
+    @Test
+    void cancelOrder_Success() {
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        OrderResponse response = orderService.cancelOrder(1L, updateRequest);
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.CANCELLED, response.getStatus());
+    }
+
+    @Test
+    void cancelOrder_AlreadyCancelled_ThrowsException() {
+        order.setStatus(OrderStatus.CANCELLED);
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        assertThrows(InvalidOrderStatusException.class, () -> orderService.cancelOrder(1L, updateRequest));
+    }
+
+    @Test
+    void cancelOrder_PendingOrder_NoRefundCalled() {
+        order.setStatus(OrderStatus.PENDING);
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        orderService.cancelOrder(1L, updateRequest);
+
+        verify(paymentClient, never()).refundPayment(anyString(), any(BigDecimal.class));
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+    }
+
+    @Test
+    void cancelOrder_ConfirmedOrder_DuplicateRefund_Idempotent() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaymentTransactionId("TXN-123");
+        order.setRefundTransactionId("REF-456"); // Already refunded
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        orderService.cancelOrder(1L, updateRequest);
+
+        verify(paymentClient, never()).refundPayment(anyString(), any(BigDecimal.class));
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+    }
+
+    @Test
+    void cancelOrder_ConfirmedOrder_RefundSuccess_StoresRefundId() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaymentTransactionId("TXN-123");
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+
+        PaymentResponse refundResponse = PaymentResponse.builder()
+                .status("REFUNDED")
+                .transactionId("REF-789")
+                .build();
+        when(paymentClient.refundPayment(eq("TXN-123"), any(BigDecimal.class))).thenReturn(refundResponse);
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        orderService.cancelOrder(1L, updateRequest);
+
+        verify(paymentClient, times(1)).refundPayment(eq("TXN-123"), any(BigDecimal.class));
+        assertEquals("REF-789", order.getRefundTransactionId());
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+    }
+
+    @Test
+    void cancelOrder_UsesPessimisticLock() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaymentTransactionId("TXN-123");
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+
+        PaymentResponse refundResponse = PaymentResponse.builder()
+                .status("REFUNDED")
+                .transactionId("REF-789")
+                .build();
+        when(paymentClient.refundPayment(eq("TXN-123"), any(BigDecimal.class))).thenReturn(refundResponse);
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        orderService.cancelOrder(1L, updateRequest);
+
+        // Verify pessimistic lock method was called instead of regular findById
+        verify(orderRepository, times(1)).findByIdWithLock(1L);
+        verify(orderRepository, never()).findById(anyLong());
+    }
+
+    @Test
+    void cancelOrder_OrderNotFound() {
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.empty());
+        
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+        
+        assertThrows(OrderNotFoundException.class, () -> orderService.cancelOrder(999L, updateRequest));
+    }
+
+    @Test
+    void cancelOrder_InvalidStatus_NotCancelled() {
+        order.setStatus(OrderStatus.PENDING);
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CONFIRMED); // Invalid: should be CANCELLED
+        
+        assertThrows(InvalidOrderStatusException.class, () -> orderService.cancelOrder(1L, updateRequest));
+    }
+
+    @Test
+    void createOrder_VerifyTotalAmountCalculation() {
+        OrderItemRequest item1 = new OrderItemRequest();
+        item1.setProductId("P001");
+        item1.setQuantity(3);
+        
+        OrderItemRequest item2 = new OrderItemRequest();
+        item2.setProductId("P002");
+        item2.setQuantity(2);
+        
+        createRequest.setItems(List.of(item1, item2));
+        
+        ProductResponse product1 = ProductResponse.builder()
+                .id(1L).name("Product 1").price(new BigDecimal("10.99")).status("AVAILABLE").build();
+        ProductResponse product2 = ProductResponse.builder()
+                .id(2L).name("Product 2").price(new BigDecimal("5.50")).status("AVAILABLE").build();
+        
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct("P001")).thenReturn(product1);
+        when(productClient.getProduct("P002")).thenReturn(product2);
+        when(productClient.getStock(anyString())).thenReturn(abundantStock);
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+        when(paymentClient.createPayment(any(PaymentRequest.class))).thenReturn(completedPayment);
+        
+        OrderResponse response = orderService.createOrder(createRequest);
+        
+        assertNotNull(response);
+        // Verify BigDecimal precision: (10.99 * 3) + (5.50 * 2) = 32.97 + 11.00 = 43.97
+        assertEquals(new BigDecimal("43.97"), response.getTotalAmount());
+    }
+
+    @Test
+    void createOrder_ProductOutOfStock_ZeroQuantity() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(availableProduct);
+        abundantStock.setAvailableQuantity(0);
+        when(productClient.getStock(anyString())).thenReturn(abundantStock);
+        
+        assertThrows(InsufficientStockException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
+    void cancelOrder_RefundFailed() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaymentTransactionId("TXN-123");
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+        
+        PaymentResponse failedRefund = PaymentResponse.builder()
+                .status("FAILED")
+                .transactionId("REF-FAILED")
+                .build();
+        when(paymentClient.refundPayment(eq("TXN-123"), any(BigDecimal.class))).thenReturn(failedRefund);
+        
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+        
+        orderService.cancelOrder(1L, updateRequest);
+        
+        // Order should still be cancelled even if refund failed
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        // refundTransactionId should NOT be set because refund status != REFUNDED
+        assertNull(order.getRefundTransactionId());
+    }
+
+    @Test
+    void cancelOrder_PaymentFailedOrder() {
+        order.setStatus(OrderStatus.PAYMENT_FAILED);
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> { Order o = invocation.getArgument(0); o.setId(1L); return o; });
+        
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+        
+        orderService.cancelOrder(1L, updateRequest);
+        
+        // Should cancel successfully without attempting refund
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+        verify(paymentClient, never()).refundPayment(anyString(), any(BigDecimal.class));
+    }
+}

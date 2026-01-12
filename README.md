@@ -178,8 +178,75 @@ Now create your own repository and start building!
 
 ---
 
-## Questions?
+## Implementation Details
 
-If you have any questions about the requirements, please reach out to your interviewer.
+### Design Decisions
 
-Good luck! We're excited to see what you build.
+1. **Architecture**: Layered architecture with clear separation
+    - **Controller**: REST API endpoints for Order management.
+    - **Service**: Business logic implementation with validation.
+    - **Repository**: Data access layer using Spring Data JPA.
+    - **Client**: Interface-based external service clients for easy mocking and testing.
+
+2. **Database**: H2 in-memory database with **Flyway** migrations.
+    - Production-ready migration scripts in `src/main/resources/db/migration`.
+    - Automated schema validation and updates.
+
+3. **External Service Integration**: Deterministic mock implementations.
+    - **Member Service**: Status-based validation (ACTIVE/INACTIVE).
+    - **Product Service**: Inventory and availability checks.
+    - **Payment Service**: Successful and failed payment simulations.
+
+4. **Resilience & Fault Tolerance**:
+    - **Circuit Breaker (Resilience4j)**: Protects order creation from external service failures.
+    - **Retry Mechanism**: Exponential backoff for transient failures.
+    - **Fallbacks**: Graceful error handling when services are unavailable.
+
+5. **Idempotency**:
+    - Support for `Idempotency-Key` header in `POST /api/orders`.
+    - Caffeine-based caching with TTL to prevent duplicate orders.
+
+6. **Concurrency & Locking**:
+    - **Optimistic Locking**: `@Version` field to prevent lost updates on Order status.
+    - **Pessimistic Locking**: `LockModeType.PESSIMISTIC_WRITE` for cancellation to ensure single-thread access.
+
+7. **Error Handling**:
+    - Centralized `GlobalExceptionHandler`.
+    - Standardized `ErrorResponse` with `traceId` for observability.
+
+### API Endpoints Summary
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/orders` | Create a new order (with Idempotency support) |
+| GET | `/api/orders/{id}` | Retrieve order details |
+| GET | `/api/orders` | List orders (supports pagination & sorting) |
+| PUT | `/api/orders/{id}` | Update (Cancel) an order |
+
+### Running the Application
+
+#### Using Gradle
+```bash
+# Build the project
+./gradlew build
+
+# Run unit and integration tests
+./gradlew test
+
+# Start the application
+./gradlew bootRun
+```
+
+#### Using Docker
+```bash
+# Build and start container
+docker-compose up -d --build
+
+# Check health
+curl http://localhost:8080/actuator/health
+```
+
+### Documentation
+- **Swagger UI**: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
+- **Actuator Health**: [http://localhost:8080/actuator/health](http://localhost:8080/actuator/health)
+- **Prometheus Metrics**: [http://localhost:8080/actuator/prometheus](http://localhost:8080/actuator/prometheus)
