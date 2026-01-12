@@ -169,6 +169,7 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
+    @SuppressWarnings("null")
     public OrderResponse cancelOrder(@NonNull Long id, @NonNull UpdateOrderRequest request) {
         Order order = orderRepository.findById(id)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
@@ -182,6 +183,13 @@ public class OrderServiceImpl implements OrderService {
         }
 
         log.info("Cancelling order {}", id);
+
+        // Phase 8: Refund confirmed order
+        if (order.getStatus() == OrderStatus.CONFIRMED && order.getPaymentTransactionId() != null) {
+            log.info("Triggering refund for order {}, transaction {}", id, order.getPaymentTransactionId());
+            paymentClient.refundPayment(order.getPaymentTransactionId(), order.getTotalAmount());
+        }
+
         order.setStatus(OrderStatus.CANCELLED);
         Order updatedOrder = orderRepository.save(order);
 

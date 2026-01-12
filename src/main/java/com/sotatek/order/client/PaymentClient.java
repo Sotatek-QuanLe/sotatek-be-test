@@ -6,4 +6,6 @@ import org.springframework.lang.NonNull;
 
 public interface PaymentClient {
     PaymentResponse createPayment(@NonNull PaymentRequest request);
+
+    PaymentResponse refundPayment(@NonNull String transactionId, @NonNull java.math.BigDecimal amount);
 }

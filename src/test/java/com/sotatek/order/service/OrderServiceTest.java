@@ -227,4 +227,24 @@ class OrderServiceTest {
 
         assertThrows(OrderNotFoundException.class, () -> orderService.cancelOrder(1L, updateRequest));
     }
+
+    @Test
+    void cancelOrder_RefundSuccess() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaymentTransactionId("TXN-123");
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenReturn(order);
+        when(paymentClient.refundPayment(anyString(), any(BigDecimal.class)))
+                .thenReturn(com.sotatek.order.model.dto.external.PaymentResponse.builder().status("REFUNDED").build());
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        OrderResponse response = orderService.cancelOrder(1L, updateRequest);
+
+        assertNotNull(response);
+        assertEquals(OrderStatus.CANCELLED, response.getStatus());
+        verify(paymentClient, times(1)).refundPayment(org.mockito.ArgumentMatchers.eq("TXN-123"),
+                any(BigDecimal.class));
+    }
 }

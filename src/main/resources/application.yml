@@ -27,6 +27,36 @@ spring:
     console:
       enabled: false
 
+resilience4j:
+  circuitbreaker:
+    instances:
+      memberService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+      productService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+      paymentService:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+  retry:
+    instances:
+      memberService:
+        maxAttempts: 3
+        waitDuration: 500ms
+      productService:
+        maxAttempts: 3
+        waitDuration: 500ms
+      paymentService:
+        maxAttempts: 3
+        waitDuration: 500ms
+
 logging:
   level:
     root: INFO

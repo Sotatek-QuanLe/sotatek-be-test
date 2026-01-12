@@ -57,6 +57,11 @@ public class GlobalExceptionHandler {
         return buildErrorResponse(ErrorCode.PAYMENT_FAILED, ex.getMessage());
     }
 
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ErrorResponse> handleServiceUnavailable(ServiceUnavailableException ex) {
+        return buildErrorResponse(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @SuppressWarnings("null")
     public ResponseEntity<ErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {

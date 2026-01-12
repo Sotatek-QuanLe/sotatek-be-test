@@ -22,11 +22,27 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
+    private final com.sotatek.order.service.IdempotencyService idempotencyService;
 
     @PostMapping
     @Operation(summary = "Create a new order", description = "Validates member, products, stock and processes payment")
-    public ResponseEntity<OrderResponse> createOrder(@NonNull @Valid @RequestBody CreateOrderRequest request) {
+    public ResponseEntity<OrderResponse> createOrder(
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+            @NonNull @Valid @RequestBody CreateOrderRequest request) {
+
+        if (idempotencyKey != null) {
+            java.util.Optional<OrderResponse> cached = idempotencyService.getResponse(idempotencyKey);
+            if (cached.isPresent()) {
+                return ResponseEntity.ok(cached.get());
+            }
+        }
+
         OrderResponse response = orderService.createOrder(request);
+
+        if (idempotencyKey != null) {
+            idempotencyService.storeResponse(idempotencyKey, response);
+        }
+
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
