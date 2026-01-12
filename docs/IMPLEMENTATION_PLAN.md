@@ -706,29 +706,29 @@ Trước khi submit, verify tất cả items:
 ```
 CORE FUNCTIONALITY:
 [x] ./gradlew build passes
-[ ] ./gradlew test passes (all tests green)
-[ ] Application starts without error
-[ ] POST /api/orders works
-[ ] GET /api/orders/{id} works  
-[ ] GET /api/orders works (pagination)
-[ ] PUT /api/orders/{id} (cancel) works
+[x] ./gradlew test passes (all tests green)
+[x] Application starts without error
+[x] POST /api/orders works
+[x] GET /api/orders/{id} works  
+[x] GET /api/orders works (pagination)
+[x] PUT /api/orders/{id} (cancel) works
 
 EXTERNAL INTEGRATION:
-[ ] Member validation works
-[ ] Product validation works
-[ ] Payment processing works
-[ ] Error scenarios handled
+[x] Member validation works
+[x] Product validation works
+[x] Payment processing works
+[x] Error scenarios handled
 
 CODE QUALITY:
-[ ] Consistent error response format
-[ ] Proper HTTP status codes
-[ ] Logging present
-[ ] No hardcoded values
-[ ] Clean package structure
+[x] Consistent error response format
+[x] Proper HTTP status codes
+[x] Logging present
+[x] No hardcoded values
+[x] Clean package structure
 
 DOCUMENTATION:
-[ ] Swagger UI works
-[ ] README has run instructions
+[x] Swagger UI works
+[x] README has run instructions
 ```
 
 ---
@@ -741,3 +741,236 @@ DOCUMENTATION:
 4. **Use provided test commands** to verify functionality
 5. **If stuck on a phase > 15 minutes**, simplify and move on
 6. **Prioritize working code** over perfect code
+
+---
+
+## Phase 7: Critical Technical Debt (P0)
+
+### 🎯 Mục tiêu
+Giải quyết các vấn đề nghiêm trọng từ Technical Debt cần thiết cho production.
+
+### 📝 Tasks chi tiết
+
+#### 7.1. Race Condition - Stock Check
+- **Issue**: Không có locking giữa check stock và create order → overselling
+- **Solution**:
+  - Thêm `@Version` field vào `Order` entity cho Optimistic Locking
+  - Hoặc sử dụng `@Lock(LockModeType.PESSIMISTIC_WRITE)` trong repository
+
+```java
+// OrderRepository.java
+@Lock(LockModeType.PESSIMISTIC_WRITE)
+@Query("SELECT o FROM Order o WHERE o.id = :id")
+Optional<Order> findByIdWithLock(@Param("id") Long id);
+```
+
+#### 7.2. Distributed Transaction - Saga Pattern
+- **Issue**: Payment fail/timeout sau khi order đã saved → inconsistent state
+- **Solution**:
+  - Implement compensation logic khi payment fails
+  - Add `PAYMENT_FAILED` status để track
+  - Consider idempotency key cho retry safety
+
+```java
+// OrderStatus.java - thêm status mới
+PAYMENT_FAILED
+
+// OrderServiceImpl.java - compensation logic
+try {
+    processPayment(savedOrder);
+} catch (PaymentFailedException e) {
+    savedOrder.setStatus(OrderStatus.PAYMENT_FAILED);
+    orderRepository.save(savedOrder);
+    throw e;
+}
+```
+
+#### 7.3. Database Migration với Flyway
+- **Issue**: `ddl-auto: create-drop` → mất data khi restart
+- **Solution**:
+  - Add Flyway dependency
+  - Create migration scripts
+  - Switch `ddl-auto` sang `validate`
+
+```groovy
+// build.gradle
+implementation 'org.flywaydb:flyway-core'
+
+// application.yml
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: true
+```
+
+### ✅ Tiêu chí DONE
+- [ ] Optimistic/Pessimistic locking implemented
+- [ ] Payment failure có compensation logic
+- [ ] Flyway migrations ready
+- [ ] Tests vẫn pass
+
+---
+
+## Phase 8: Production Hardening (P1)
+
+### 🎯 Mục tiêu
+Tăng cường resilience và production-readiness.
+
+### 📝 Tasks chi tiết
+
+#### 8.1. Circuit Breaker với Resilience4j
+- **Issue**: External service down → toàn bộ order service down
+- **Solution**: Add Resilience4j với Circuit Breaker, Retry, và TimeLimiter
+
+```groovy
+// build.gradle
+implementation 'io.github.resilience4j:resilience4j-spring-boot3:2.2.0'
+```
+
+```java
+// MemberClient interface
+@CircuitBreaker(name = "memberService", fallbackMethod = "getMemberFallback")
+@Retry(name = "memberService")
+@TimeLimiter(name = "memberService")
+MemberResponse getMember(String memberId);
+
+default MemberResponse getMemberFallback(String memberId, Throwable t) {
+    throw new ServiceUnavailableException("Member service is temporarily unavailable");
+}
+```
+
+#### 8.2. Fix Entity Lombok Issue
+- **Issue**: `@Data` trên Entity gây N+1 queries, StackOverflowError
+- **Solution**: Replace `@Data` với `@Getter`, `@Setter` và custom equals/hashCode
+
+```java
+@Entity
+@Getter
+@Setter
+@NoArgsConstructor
+public class Order {
+    // ...
+    
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Order order)) return false;
+        return id != null && id.equals(order.getId());
+    }
+
+    @Override
+    public int hashCode() {
+        return getClass().hashCode();
+    }
+}
+```
+
+#### 8.3. Idempotency Key
+- **Issue**: Retry request có thể tạo duplicate orders
+- **Solution**: Add `Idempotency-Key` header support
+
+```java
+// IdempotencyKeyService.java
+@Service
+public class IdempotencyKeyService {
+    private final Map<String, OrderResponse> cache = new ConcurrentHashMap<>();
+    
+    public Optional<OrderResponse> get(String key) {
+        return Optional.ofNullable(cache.get(key));
+    }
+    
+    public void store(String key, OrderResponse response) {
+        cache.put(key, response);
+    }
+}
+
+// OrderController.java
+@PostMapping
+public ResponseEntity<OrderResponse> createOrder(
+    @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
+    @Valid @RequestBody CreateOrderRequest request) {
+    
+    if (idempotencyKey != null) {
+        Optional<OrderResponse> cached = idempotencyKeyService.get(idempotencyKey);
+        if (cached.isPresent()) {
+            return ResponseEntity.ok(cached.get());
+        }
+    }
+    // ... continue with order creation
+}
+```
+
+#### 8.4. Cancel Order với Refund
+- **Issue**: Cancel CONFIRMED order không trigger refund
+- **Solution**: Add refund logic trong cancel flow
+
+```java
+// PaymentClient.java
+PaymentResponse refundPayment(String transactionId, BigDecimal amount);
+
+// OrderServiceImpl.java - cancelOrder method
+if (order.getStatus() == OrderStatus.CONFIRMED && order.getPaymentTransactionId() != null) {
+    paymentClient.refundPayment(order.getPaymentTransactionId(), order.getTotalAmount());
+}
+```
+
+### ✅ Tiêu chí DONE
+- [ ] Circuit Breaker cho tất cả external calls
+- [ ] Entity Lombok issues fixed
+- [ ] Idempotency key working
+- [ ] Refund on cancel implemented
+- [ ] All tests pass
+
+---
+
+## Phase 9: Observability & Security (P2 - Nice to have)
+
+### 📝 Tasks chi tiết
+
+#### 9.1. Pagination với Sort
+```java
+@GetMapping
+public ResponseEntity<Page<OrderResponse>> listOrders(
+    @RequestParam(defaultValue = "0") int page,
+    @RequestParam(defaultValue = "10") int size,
+    @RequestParam(defaultValue = "createdAt") String sortBy,
+    @RequestParam(defaultValue = "desc") String sortDir) {
+    
+    Sort sort = sortDir.equalsIgnoreCase("asc") 
+        ? Sort.by(sortBy).ascending() 
+        : Sort.by(sortBy).descending();
+    return ResponseEntity.ok(orderService.listOrders(PageRequest.of(page, size, sort)));
+}
+```
+
+#### 9.2. Error Response với Trace ID
+```java
+@Data
+@Builder
+public class ErrorResponse {
+    private String error;
+    private String message;
+    private LocalDateTime timestamp;
+    private String traceId;  // Add MDC.get("traceId")
+    private Map<String, String> fieldErrors;
+}
+```
+
+#### 9.3. Observability Stack
+- [ ] Add Spring Boot Actuator
+- [ ] Add Micrometer metrics
+- [ ] Structured logging với correlation ID
+
+#### 9.4. Security (Optional)
+- [ ] Spring Security + JWT
+- [ ] Rate limiting với Bucket4j
+- [ ] Input sanitization
+
+### ✅ Tiêu chí DONE
+- [ ] Sort parameter working
+- [ ] Trace ID in error responses
+- [ ] Actuator endpoints accessible
+- [ ] (Optional) Basic security configured
+
