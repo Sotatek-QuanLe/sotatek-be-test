@@ -165,7 +165,8 @@ class OrderServiceTest {
         when(paymentClient.createPayment(any(PaymentRequest.class))).thenReturn(failedPayment);
 
         assertThrows(PaymentFailedException.class, () -> orderService.createOrder(createRequest));
-        verify(orderRepository, times(1)).save(any(Order.class));
+        // Verify: 1st save (initial PENDING) + 2nd save (compensation PAYMENT_FAILED)
+        verify(orderRepository, times(2)).save(any(Order.class));
     }
 
     @Test

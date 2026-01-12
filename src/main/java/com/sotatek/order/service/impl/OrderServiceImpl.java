@@ -57,8 +57,15 @@ public class OrderServiceImpl implements OrderService {
         Order order = buildOrderEntity(request);
         Order savedOrder = orderRepository.save(order);
 
-        // 3. Process Payment
-        processPayment(savedOrder);
+        // 3. Process Payment with compensation logic
+        try {
+            processPayment(savedOrder);
+        } catch (PaymentFailedException e) {
+            log.warn("Payment failed, marking order {} as PAYMENT_FAILED", savedOrder.getId());
+            savedOrder.setStatus(OrderStatus.PAYMENT_FAILED);
+            orderRepository.save(savedOrder);
+            throw e;
+        }
 
         return mapToResponse(savedOrder);
     }
