@@ -26,6 +26,10 @@ spring:
       settings:
         web-allow-others: true
 
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
 management:
   endpoints:
     web:
