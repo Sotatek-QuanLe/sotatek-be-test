@@ -1,7 +1,14 @@
 package com.sotatek.order.service.impl;
 
-import com.sotatek.order.exception.InvalidOrderStatusException;
-import com.sotatek.order.exception.OrderNotFoundException;
+import com.sotatek.order.client.MemberClient;
+import com.sotatek.order.client.PaymentClient;
+import com.sotatek.order.client.ProductClient;
+import com.sotatek.order.exception.*;
+import com.sotatek.order.model.dto.external.MemberResponse;
+import com.sotatek.order.model.dto.external.PaymentRequest;
+import com.sotatek.order.model.dto.external.PaymentResponse;
+import com.sotatek.order.model.dto.external.ProductResponse;
+import com.sotatek.order.model.dto.external.ProductStockResponse;
 import com.sotatek.order.model.dto.request.CreateOrderRequest;
 import com.sotatek.order.model.dto.request.UpdateOrderRequest;
 import com.sotatek.order.model.dto.response.OrderItemResponse;
@@ -29,11 +36,20 @@ import java.util.stream.Collectors;
 public class OrderServiceImpl implements OrderService {
 
     private final OrderRepository orderRepository;
+    private final MemberClient memberClient;
+    private final ProductClient productClient;
+    private final PaymentClient paymentClient;
 
     @Override
     @Transactional
     public OrderResponse createOrder(@NonNull CreateOrderRequest request) {
         log.info("Creating order for member: {}", request.getMemberId());
+
+        // 1. Validate Member
+        MemberResponse member = memberClient.getMember(request.getMemberId());
+        if (!"ACTIVE".equals(member.getStatus())) {
+            throw new MemberInactiveException("Member status is not ACTIVE: " + member.getStatus());
+        }
 
         BigDecimal totalAmount = BigDecimal.ZERO;
         Order order = Order.builder()
@@ -42,17 +58,29 @@ public class OrderServiceImpl implements OrderService {
                 .status(OrderStatus.PENDING)
                 .build();
 
+        // 2. Validate Products and calculate total
         for (var itemRequest : request.getItems()) {
-            // Hardcoded product info for Phase 2
-            BigDecimal unitPrice = new BigDecimal("99.99");
-            String productName = "Mock Product " + itemRequest.getProductId();
-            BigDecimal subtotal = unitPrice.multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+            String productId = itemRequest.getProductId();
+
+            // Get product info
+            ProductResponse product = productClient.getProduct(productId);
+            if (!"AVAILABLE".equals(product.getStatus())) {
+                throw new ProductUnavailableException("Product is not available: " + productId);
+            }
+
+            // Check stock
+            ProductStockResponse stock = productClient.getStock(productId);
+            if (stock.getAvailableQuantity() < itemRequest.getQuantity()) {
+                throw new InsufficientStockException("Insufficient stock for product: " + productId);
+            }
+
+            BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
 
             OrderItem orderItem = OrderItem.builder()
-                    .productId(itemRequest.getProductId())
-                    .productName(productName)
+                    .productId(productId)
+                    .productName(product.getName())
                     .quantity(itemRequest.getQuantity())
-                    .unitPrice(unitPrice)
+                    .unitPrice(product.getPrice())
                     .subtotal(subtotal)
                     .build();
 
@@ -62,6 +90,22 @@ public class OrderServiceImpl implements OrderService {
 
         order.setTotalAmount(totalAmount);
         Order savedOrder = orderRepository.save(order);
+
+        // 3. Process Payment
+        PaymentRequest paymentRequest = PaymentRequest.builder()
+                .orderId(savedOrder.getId())
+                .amount(totalAmount)
+                .paymentMethod(request.getPaymentMethod())
+                .build();
+
+        PaymentResponse paymentResponse = paymentClient.createPayment(paymentRequest);
+        if ("COMPLETED".equals(paymentResponse.getStatus())) {
+            log.info("Payment successful for order: {}", savedOrder.getId());
+            savedOrder.setStatus(OrderStatus.CONFIRMED);
+            savedOrder = orderRepository.save(savedOrder);
+        } else {
+            log.warn("Payment failed for order: {}. Status remains PENDING", savedOrder.getId());
+        }
 
         return mapToResponse(savedOrder);
     }
