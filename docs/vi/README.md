@@ -2,6 +2,13 @@
 
 This is a robust implementation of the Order Microservice challenge, built with Spring Boot 3.2.0 and Java 17.
 
+## 📖 Tài liệu Dự án
+- [Tài liệu Thiết kế](DESIGN.md)
+- [Các Giả định](ASSUMPTIONS.md)
+- [Kế hoạch Triển khai](IMPLEMENTATION_PLAN.md)
+- [Nợ Kỹ thuật](TECHNICAL_DEBT.md)
+- [Quy chuẩn Coding](CONVENTIONS.md)
+
 ## 🚀 Getting Started
 
 ### Prerequisites

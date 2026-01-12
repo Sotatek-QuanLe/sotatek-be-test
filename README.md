@@ -2,6 +2,24 @@
 
 Welcome! This is a backend developer assessment designed to evaluate your skills in building microservices.
 
+## 📚 Documentation
+
+Detailed documentation is available in English and Vietnamese:
+
+### [English Documentation](docs/en/README.md)
+- [Design Document](docs/en/DESIGN.md)
+- [Assumptions](docs/en/ASSUMPTIONS.md)
+- [Implementation Plan](docs/en/IMPLEMENTATION_PLAN.md)
+- [Technical Debt](docs/en/TECHNICAL_DEBT.md)
+- [Conventions](docs/en/CONVENTIONS.md)
+
+### [Tài liệu Tiếng Việt](docs/vi/README.md)
+- [Tài liệu Thiết kế](docs/vi/DESIGN.md)
+- [Các Giả định](docs/vi/ASSUMPTIONS.md)
+- [Kế hoạch Triển khai](docs/vi/IMPLEMENTATION_PLAN.md)
+- [Nợ Kỹ thuật](docs/vi/TECHNICAL_DEBT.md)
+- [Quy chuẩn Coding](docs/vi/CONVENTIONS.md)
+
 ## The Challenge
 
 Your mission is to build an **Order Service** - a microservice that handles order management while integrating with external services (Member, Product, and Payment services).

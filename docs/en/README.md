@@ -2,6 +2,13 @@
 
 This is a robust implementation of the Order Microservice challenge, built with Spring Boot 3.2.0 and Java 17.
 
+## 📖 Project Documentation
+- [Design Document](DESIGN.md) - Architecture, flows, and trade-offs.
+- [Assumptions](ASSUMPTIONS.md) - Business and technical assumptions made.
+- [Implementation Plan](IMPLEMENTATION_PLAN.md) - Step-by-step development guide.
+- [Technical Debt](TECHNICAL_DEBT.md) - Known issues and future improvements.
+- [Conventions](CONVENTIONS.md) - Coding standards and best practices.
+
 ## 🚀 Getting Started
 
 ### Prerequisites
