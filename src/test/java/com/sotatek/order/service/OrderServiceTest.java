@@ -234,31 +234,68 @@ class OrderServiceTest {
     }
 
     @Test
-    void cancelOrder_OrderNotFound() {
-        when(orderRepository.findById(anyLong())).thenReturn(Optional.empty());
+    void cancelOrder_AlreadyCancelled_ThrowsException() {
+        order.setStatus(OrderStatus.CANCELLED);
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+
         UpdateOrderRequest updateRequest = new UpdateOrderRequest();
         updateRequest.setStatus(OrderStatus.CANCELLED);
 
-        assertThrows(OrderNotFoundException.class, () -> orderService.cancelOrder(1L, updateRequest));
+        assertThrows(InvalidOrderStatusException.class, () -> orderService.cancelOrder(1L, updateRequest));
     }
 
     @Test
-    void cancelOrder_RefundSuccess() {
+    void cancelOrder_PendingOrder_NoRefundCalled() {
+        order.setStatus(OrderStatus.PENDING);
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenReturn(order);
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        orderService.cancelOrder(1L, updateRequest);
+
+        verify(paymentClient, never()).refundPayment(anyString(), any(BigDecimal.class));
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+    }
+
+    @Test
+    void cancelOrder_ConfirmedOrder_DuplicateRefund_Idempotent() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaymentTransactionId("TXN-123");
+        order.setRefundTransactionId("REF-456"); // Already refunded
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenReturn(order);
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        orderService.cancelOrder(1L, updateRequest);
+
+        verify(paymentClient, never()).refundPayment(anyString(), any(BigDecimal.class));
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
+    }
+
+    @Test
+    void cancelOrder_ConfirmedOrder_RefundSuccess_StoresRefundId() {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setPaymentTransactionId("TXN-123");
         when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenReturn(order);
-        when(paymentClient.refundPayment(anyString(), any(BigDecimal.class)))
-                .thenReturn(com.sotatek.order.model.dto.external.PaymentResponse.builder().status("REFUNDED").build());
+
+        PaymentResponse refundResponse = PaymentResponse.builder()
+                .status("REFUNDED")
+                .transactionId("REF-789")
+                .build();
+        when(paymentClient.refundPayment(eq("TXN-123"), any(BigDecimal.class))).thenReturn(refundResponse);
 
         UpdateOrderRequest updateRequest = new UpdateOrderRequest();
         updateRequest.setStatus(OrderStatus.CANCELLED);
 
-        OrderResponse response = orderService.cancelOrder(1L, updateRequest);
+        orderService.cancelOrder(1L, updateRequest);
 
-        assertNotNull(response);
-        assertEquals(OrderStatus.CANCELLED, response.getStatus());
-        verify(paymentClient, times(1)).refundPayment(org.mockito.ArgumentMatchers.eq("TXN-123"),
-                any(BigDecimal.class));
+        verify(paymentClient, times(1)).refundPayment(eq("TXN-123"), any(BigDecimal.class));
+        assertEquals("REF-789", order.getRefundTransactionId());
+        assertEquals(OrderStatus.CANCELLED, order.getStatus());
     }
 }

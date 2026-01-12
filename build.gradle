@@ -28,6 +28,7 @@ dependencies {
     
     runtimeOnly 'com.h2database:h2'
     implementation 'org.flywaydb:flyway-core'
+    implementation 'com.github.ben-manes.caffeine:caffeine'
     
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'

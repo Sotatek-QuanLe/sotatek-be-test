@@ -30,7 +30,8 @@ public class ExternalStatus {
     public enum Payment {
         COMPLETED("COMPLETED"),
         FAILED("FAILED"),
-        PENDING("PENDING");
+        PENDING("PENDING"),
+        REFUNDED("REFUNDED");
 
         private final String value;
     }

@@ -13,6 +13,7 @@ import java.util.UUID;
 import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import com.sotatek.order.exception.ServiceUnavailableException;
+import com.sotatek.order.model.enums.ExternalStatus;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -23,7 +24,9 @@ public class MockPaymentClient implements PaymentClient {
     @CircuitBreaker(name = "paymentService", fallbackMethod = "paymentFallback")
     @Retry(name = "paymentService")
     public PaymentResponse createPayment(@NonNull PaymentRequest request) {
-        String status = request.getAmount().compareTo(new BigDecimal("10000")) > 0 ? "FAILED" : "COMPLETED";
+        String status = request.getAmount().compareTo(new BigDecimal("10000")) > 0
+                ? ExternalStatus.Payment.FAILED.getValue()
+                : ExternalStatus.Payment.COMPLETED.getValue();
 
         return PaymentResponse.builder()
                 .id(1L)
@@ -42,7 +45,7 @@ public class MockPaymentClient implements PaymentClient {
         return PaymentResponse.builder()
                 .id(2L)
                 .amount(amount)
-                .status("REFUNDED")
+                .status(ExternalStatus.Payment.REFUNDED.getValue())
                 .transactionId(transactionId)
                 .createdAt(LocalDateTime.now())
                 .build();

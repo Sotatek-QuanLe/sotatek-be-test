@@ -184,10 +184,23 @@ public class OrderServiceImpl implements OrderService {
 
         log.info("Cancelling order {}", id);
 
-        // Phase 8: Refund confirmed order
+        // Phase 8: Refund confirmed order with idempotency check (Issue 4)
         if (order.getStatus() == OrderStatus.CONFIRMED && order.getPaymentTransactionId() != null) {
-            log.info("Triggering refund for order {}, transaction {}", id, order.getPaymentTransactionId());
-            paymentClient.refundPayment(order.getPaymentTransactionId(), order.getTotalAmount());
+            if (order.getRefundTransactionId() != null) {
+                log.info("Order {} already has a refund transaction: {}", id, order.getRefundTransactionId());
+            } else {
+                log.info("Triggering refund for order {}, transaction {}", id, order.getPaymentTransactionId());
+                PaymentResponse refundResponse = paymentClient.refundPayment(order.getPaymentTransactionId(),
+                        order.getTotalAmount());
+
+                if (refundResponse != null
+                        && ExternalStatus.Payment.REFUNDED.getValue().equals(refundResponse.getStatus())) {
+                    order.setRefundTransactionId(refundResponse.getTransactionId());
+                } else {
+                    log.warn("Refund process returned non-success status for order {}: {}", id,
+                            refundResponse != null ? refundResponse.getStatus() : "null");
+                }
+            }
         }
 
         order.setStatus(OrderStatus.CANCELLED);

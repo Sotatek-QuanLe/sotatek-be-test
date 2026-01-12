@@ -51,6 +51,9 @@ public class Order {
     @Column(name = "payment_transaction_id")
     private String paymentTransactionId;
 
+    @Column(name = "refund_transaction_id")
+    private String refundTransactionId;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;

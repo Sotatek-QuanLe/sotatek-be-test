@@ -3,6 +3,7 @@ package com.sotatek.order.controller;
 import com.sotatek.order.model.dto.request.CreateOrderRequest;
 import com.sotatek.order.model.dto.request.UpdateOrderRequest;
 import com.sotatek.order.model.dto.response.OrderResponse;
+import com.sotatek.order.service.IdempotencyService;
 import com.sotatek.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -10,6 +11,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
@@ -22,7 +24,7 @@ import org.springframework.web.bind.annotation.*;
 public class OrderController {
 
     private final OrderService orderService;
-    private final com.sotatek.order.service.IdempotencyService idempotencyService;
+    private final IdempotencyService idempotencyService;
 
     @PostMapping
     @Operation(summary = "Create a new order", description = "Validates member, products, stock and processes payment")
@@ -30,18 +32,9 @@ public class OrderController {
             @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             @NonNull @Valid @RequestBody CreateOrderRequest request) {
 
-        if (idempotencyKey != null) {
-            java.util.Optional<OrderResponse> cached = idempotencyService.getResponse(idempotencyKey);
-            if (cached.isPresent()) {
-                return ResponseEntity.ok(cached.get());
-            }
-        }
-
-        OrderResponse response = orderService.createOrder(request);
-
-        if (idempotencyKey != null) {
-            idempotencyService.storeResponse(idempotencyKey, response);
-        }
+        // Atomic operation to fix race condition and return 201 for both states
+        OrderResponse response = idempotencyService.getOrCompute(idempotencyKey,
+                () -> orderService.createOrder(request));
 
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
@@ -61,9 +54,9 @@ public class OrderController {
             @RequestParam(defaultValue = "createdAt") String sortBy,
             @RequestParam(defaultValue = "desc") String sortDir) {
 
-        org.springframework.data.domain.Sort sort = sortDir.equalsIgnoreCase("asc")
-                ? org.springframework.data.domain.Sort.by(sortBy).ascending()
-                : org.springframework.data.domain.Sort.by(sortBy).descending();
+        Sort sort = sortDir.equalsIgnoreCase("asc")
+                ? Sort.by(sortBy).ascending()
+                : Sort.by(sortBy).descending();
 
         Page<OrderResponse> response = orderService.listOrders(PageRequest.of(page, size, sort));
         return ResponseEntity.ok(response);
