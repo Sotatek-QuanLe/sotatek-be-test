@@ -1,3 +1,6 @@
+server:
+  port: 8080
+
 spring:
   application:
     name: order-service
@@ -13,8 +16,7 @@ spring:
       ddl-auto: create-drop
     show-sql: true
     properties:
-      hibernate:
-        format_sql: true
+      "[hibernate.format_sql]": true
     open-in-view: false
 
   h2:
@@ -22,10 +24,8 @@ spring:
       enabled: true
       path: /h2-console
 
-server:
-  port: 8080
-
 logging:
   level:
-    com.sotatek.order: INFO
-    org.hibernate.SQL: DEBUG
+    root: INFO
+    "[com.sotatek.order]": DEBUG
+    "[org.hibernate.SQL]": DEBUG
