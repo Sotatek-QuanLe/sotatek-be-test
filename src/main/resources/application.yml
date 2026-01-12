@@ -4,13 +4,11 @@ server:
 spring:
   application:
     name: order-service
-
   datasource:
     url: jdbc:h2:mem:orderdb
     driver-class-name: org.h2.Driver
     username: sa
     password:
-
   jpa:
     hibernate:
       ddl-auto: validate
@@ -18,14 +16,24 @@ spring:
     properties:
       "[hibernate.format_sql]": false
     open-in-view: false
-
   flyway:
     enabled: true
     baseline-on-migrate: true
-
   h2:
     console:
       enabled: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 resilience4j:
   circuitbreaker:
@@ -58,6 +66,8 @@ resilience4j:
         waitDuration: 500ms
 
 logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} [%X{traceId}] - %msg%n"
   level:
     root: INFO
     "[com.sotatek.order]": INFO

@@ -9,6 +9,8 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import org.slf4j.MDC;
+
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
@@ -76,6 +78,7 @@ public class GlobalExceptionHandler {
                 .error(ErrorCode.VALIDATION_ERROR.name())
                 .message("Validation failed")
                 .timestamp(LocalDateTime.now())
+                .traceId(MDC.get("traceId"))
                 .fieldErrors(fieldErrors)
                 .build();
 
@@ -94,6 +97,7 @@ public class GlobalExceptionHandler {
                 .error(errorCode.name())
                 .message(message)
                 .timestamp(LocalDateTime.now())
+                .traceId(MDC.get("traceId"))
                 .build();
 
         HttpStatus status = errorCode.getStatus();

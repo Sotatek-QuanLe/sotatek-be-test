@@ -12,6 +12,7 @@ public class ErrorResponse {
     private String error; // ErrorCode as string
     private String message; // Human readable message
     private LocalDateTime timestamp;
+    private String traceId;
 
     // Optional: validation errors detail
     private Map<String, String> fieldErrors;

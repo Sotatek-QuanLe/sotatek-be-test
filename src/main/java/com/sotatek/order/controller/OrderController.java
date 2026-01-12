@@ -54,11 +54,18 @@ public class OrderController {
     }
 
     @GetMapping
-    @Operation(summary = "List orders with pagination")
+    @Operation(summary = "List orders with pagination and sorting")
     public ResponseEntity<Page<OrderResponse>> listOrders(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
-        Page<OrderResponse> response = orderService.listOrders(PageRequest.of(page, size));
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "createdAt") String sortBy,
+            @RequestParam(defaultValue = "desc") String sortDir) {
+
+        org.springframework.data.domain.Sort sort = sortDir.equalsIgnoreCase("asc")
+                ? org.springframework.data.domain.Sort.by(sortBy).ascending()
+                : org.springframework.data.domain.Sort.by(sortBy).descending();
+
+        Page<OrderResponse> response = orderService.listOrders(PageRequest.of(page, size, sort));
         return ResponseEntity.ok(response);
     }
 

@@ -28,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 import java.math.BigDecimal;
 import java.util.Collections;
@@ -203,6 +204,19 @@ class OrderServiceTest {
         Page<OrderResponse> response = orderService.listOrders(PageRequest.of(0, 10));
         assertNotNull(response);
         assertTrue(response.getContent().isEmpty());
+    }
+
+    @Test
+    void listOrders_WithSorting_Success() {
+        Page<Order> orderPage = new PageImpl<>(List.of(order));
+        PageRequest pageRequest = PageRequest.of(0, 10, Sort.by("createdAt").descending());
+        when(orderRepository.findAll(pageRequest)).thenReturn(orderPage);
+
+        Page<OrderResponse> response = orderService.listOrders(pageRequest);
+
+        assertNotNull(response);
+        assertEquals(1, response.getTotalElements());
+        verify(orderRepository).findAll(pageRequest);
     }
 
     @Test
