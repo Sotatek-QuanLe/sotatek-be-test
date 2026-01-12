@@ -169,7 +169,8 @@ public class OrderServiceImpl implements OrderService {
     @Transactional
     @SuppressWarnings("null")
     public OrderResponse cancelOrder(@NonNull Long id, @NonNull UpdateOrderRequest request) {
-        Order order = orderRepository.findById(id)
+        // Use pessimistic lock to prevent concurrent modifications during refund
+        Order order = orderRepository.findByIdWithLock(id)
                 .orElseThrow(() -> new OrderNotFoundException("Order not found with id: " + id));
 
         if (order.getStatus() == OrderStatus.CANCELLED) {

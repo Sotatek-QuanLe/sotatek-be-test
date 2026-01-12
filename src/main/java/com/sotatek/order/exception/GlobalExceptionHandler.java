@@ -8,6 +8,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 
 import org.slf4j.MDC;
 
@@ -62,6 +63,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ServiceUnavailableException.class)
     public ResponseEntity<ErrorResponse> handleServiceUnavailable(ServiceUnavailableException ex) {
         return buildErrorResponse(ErrorCode.EXTERNAL_SERVICE_UNAVAILABLE, ex.getMessage());
+    }
+
+    @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponse> handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
+        log.warn("Optimistic locking failure: {}", ex.getMessage());
+        return buildErrorResponse(ErrorCode.CONCURRENT_MODIFICATION,
+                "Resource was modified by another request. Please retry.");
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

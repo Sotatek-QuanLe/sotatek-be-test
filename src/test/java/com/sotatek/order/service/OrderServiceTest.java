@@ -221,7 +221,7 @@ class OrderServiceTest {
 
     @Test
     void cancelOrder_Success() {
-        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenReturn(order);
 
         UpdateOrderRequest updateRequest = new UpdateOrderRequest();
@@ -236,7 +236,7 @@ class OrderServiceTest {
     @Test
     void cancelOrder_AlreadyCancelled_ThrowsException() {
         order.setStatus(OrderStatus.CANCELLED);
-        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
 
         UpdateOrderRequest updateRequest = new UpdateOrderRequest();
         updateRequest.setStatus(OrderStatus.CANCELLED);
@@ -247,7 +247,7 @@ class OrderServiceTest {
     @Test
     void cancelOrder_PendingOrder_NoRefundCalled() {
         order.setStatus(OrderStatus.PENDING);
-        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenReturn(order);
 
         UpdateOrderRequest updateRequest = new UpdateOrderRequest();
@@ -264,7 +264,7 @@ class OrderServiceTest {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setPaymentTransactionId("TXN-123");
         order.setRefundTransactionId("REF-456"); // Already refunded
-        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenReturn(order);
 
         UpdateOrderRequest updateRequest = new UpdateOrderRequest();
@@ -280,7 +280,7 @@ class OrderServiceTest {
     void cancelOrder_ConfirmedOrder_RefundSuccess_StoresRefundId() {
         order.setStatus(OrderStatus.CONFIRMED);
         order.setPaymentTransactionId("TXN-123");
-        when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenReturn(order);
 
         PaymentResponse refundResponse = PaymentResponse.builder()
@@ -297,5 +297,28 @@ class OrderServiceTest {
         verify(paymentClient, times(1)).refundPayment(eq("TXN-123"), any(BigDecimal.class));
         assertEquals("REF-789", order.getRefundTransactionId());
         assertEquals(OrderStatus.CANCELLED, order.getStatus());
+    }
+
+    @Test
+    void cancelOrder_UsesPessimisticLock() {
+        order.setStatus(OrderStatus.CONFIRMED);
+        order.setPaymentTransactionId("TXN-123");
+        when(orderRepository.findByIdWithLock(anyLong())).thenReturn(Optional.of(order));
+        when(orderRepository.save(any(Order.class))).thenReturn(order);
+
+        PaymentResponse refundResponse = PaymentResponse.builder()
+                .status("REFUNDED")
+                .transactionId("REF-789")
+                .build();
+        when(paymentClient.refundPayment(eq("TXN-123"), any(BigDecimal.class))).thenReturn(refundResponse);
+
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        orderService.cancelOrder(1L, updateRequest);
+
+        // Verify pessimistic lock method was called instead of regular findById
+        verify(orderRepository, times(1)).findByIdWithLock(1L);
+        verify(orderRepository, never()).findById(anyLong());
     }
 }
