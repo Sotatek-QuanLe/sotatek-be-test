@@ -1,185 +1,79 @@
-# Order Microservice Challenge
+# Order Microservice - Coding Challenge Implementation
 
-Welcome! This is a backend developer assessment designed to evaluate your skills in building microservices.
+This is a robust implementation of the Order Microservice challenge, built with Spring Boot 3.5.x and Java 17.
 
-## The Challenge
+## 🚀 Getting Started
 
-Your mission is to build an **Order Service** - a microservice that handles order management while integrating with external services (Member, Product, and Payment services).
+### Prerequisites
+- JDK 17 or higher
+- Gradle 8.x (wrapper included)
 
-**Time Limit**: 4 hours
-
-Don't worry - we're not looking for perfection. We want to see how you approach problems, structure your code, and handle real-world microservice scenarios.
-
----
-
-## System Architecture
-
-```
-                                    ┌─────────────────┐
-                                    │  Member Service │
-                                    │    (External)   │
-                                    └────────┬────────┘
-                                             │
-┌──────────┐      ┌─────────────────┐       │        ┌─────────────────┐
-│  Client  │─────▶│  Order Service  │───────┼───────▶│ Product Service │
-└──────────┘      │   (Your Task)   │       │        │    (External)   │
-                  └────────┬────────┘       │        └─────────────────┘
-                           │                │
-                           │                │        ┌─────────────────┐
-                           │                └───────▶│ Payment Service │
-                           │                         │    (External)   │
-                           ▼                         └─────────────────┘
-                  ┌─────────────────┐
-                  │    Database     │
-                  │  (Your Choice)  │
-                  └─────────────────┘
-```
-
-**Note**: The external services (Member, Product, Payment) are provided as OpenAPI specs only.
-You'll need to **mock these services** in your implementation.
-
----
-
-## Requirements
-
-### Functional Requirements
-
-Build REST APIs for Order management with the following operations:
-
-| Operation | Endpoint | Description |
-|-----------|----------|-------------|
-| Create Order | `POST /api/orders` | Create a new order |
-| Get Order | `GET /api/orders/{id}` | Retrieve order details |
-| List Orders | `GET /api/orders` | List orders (with pagination) |
-| Update Order | `PUT /api/orders/{id}` | Cancel Order |
-
-### External Service Integration
-
-When creating or processing an order, your service must:
-
-1. **Validate Member** - Call Member Service to verify the member exists and is active
-2. **Check Product** - Call Product Service to verify product availability and stock
-3. **Process Payment** - Call Payment Service when the order is confirmed
-
-### Non-Functional Requirements
-
-- Proper error handling and meaningful error messages
-- Input validation
-- Logging for debugging and monitoring
-- Unit tests and/or integration tests
-
----
-
-## Tech Stack
-
-### Required
-- **Java**: 17 or higher
-- **Framework**: Spring Boot 3.x
-- **Build Tool**: Gradle
-
-### Your Choice
-- Database (H2, PostgreSQL, MySQL, etc.)
-- HTTP Client (RestTemplate, WebClient, Feign, etc.)
-- Any additional libraries you find useful
-
----
-
-## External Service Specs
-
-The OpenAPI specifications for external services are located in:
-
-```
-docs/api-specs/
-├── member-service.yaml    # Member validation API
-├── product-service.yaml   # Product & inventory API
-└── payment-service.yaml   # Payment processing API
-```
-
-**Important**: These services don't actually exist - you need to mock them in your tests and implementation. Consider how you would handle:
-- Service unavailability
-- Timeout scenarios
-- Error responses
-
----
-
-## What to Submit
-
-Create your own repository and include:
-
-1. **Source Code**
-   - Well-structured, clean code
-   - Clear package organization
-
-2. **Tests**
-   - Unit tests for business logic
-   - Integration tests (optional but appreciated)
-
-3. **Documentation**
-   - API documentation (Swagger/OpenAPI recommended)
-   - Brief README explaining your design decisions
-
-4. **How to Run**
-   - Clear instructions to build and run your service
-   - Any setup steps required
-
----
-
-## Evaluation Criteria
-
-We'll be looking at:
-
-| Criteria | What We Look For |
-|----------|------------------|
-| **Code Quality** | Clean code, readability, SOLID principles |
-| **Architecture** | Layer separation, dependency management, design patterns |
-| **MSA Integration** | External service handling, error handling, resilience |
-| **Testing** | Test coverage, test quality, mocking strategies |
-| **API Design** | RESTful conventions, proper HTTP status codes |
-
-### Bonus Points
-
-These are optional but will make your submission stand out:
-
-- Circuit Breaker pattern for external service calls
-- Retry mechanism with exponential backoff
-- Comprehensive logging and monitoring hooks
-- Docker support
-- Database migration scripts
-
----
-
-## Getting Started
-
-This repository provides a minimal Spring Boot application to get you started:
-
+### Build & Run
 ```bash
-# Clone this repository for reference
+# Clone the repository
 git clone <this-repo-url>
 
-# Check that it builds
+# Build the project
 ./gradlew build
 
 # Run the application
 ./gradlew bootRun
 ```
 
-The application will start on `http://localhost:8080`
-
-Now create your own repository and start building!
-
----
-
-## Tips
-
-- **Don't overthink it** - A working solution with clean code is better than an over-engineered incomplete one
-- **Time management** - Prioritize core functionality first, then add enhancements
-- **Show your thinking** - Comments and documentation help us understand your approach
-- **Test what matters** - Focus on testing critical business logic
+### API Documentation (Swagger UI)
+Once the application is running, you can access the interactive API documentation at:
+- **Swagger UI**: [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html)
+- **OpenAPI Spec**: [http://localhost:8080/v3/api-docs](http://localhost:8080/v3/api-docs)
 
 ---
 
-## Questions?
+## 🏗️ Design Decisions
 
-If you have any questions about the requirements, please reach out to your interviewer.
+### Clean Architecture & Layer Separation
+- **Controller Layer**: Handles REST endpoints, input validation, and maps requests to service models.
+- **Service Layer**: Contains core business logic, orchestrates calls to external service clients, and manages transactions.
+- **Client Layer**: Encapsulates external service interactions using mock implementations (Phase 3 requirement).
+- **Model/Entity Layer**: Separation between JPA Entities (`Order`, `OrderItem`) and DTOs for API/External requests.
 
-Good luck! We're excited to see what you build.
+### Key Features & Robustness
+- **Global Error Handling**: Centralized exception management via `@RestControllerAdvice` ensuring consistent JSON error responses with `ErrorCode` and `timestamp`.
+- **Payment Integrity**: Implements logic to log and store `paymentTransactionId` from the payment service before confirming the order.
+- **Defensive Coding**: Strict null checks for external service responses and robust validation for input (e.g., max items, quantity limits).
+- **Precision Accounting**: Uses `BigDecimal` with `RoundingMode.HALF_UP` for all currency calculations to avoid floating-point inaccuracies.
+- **Lombok**: Extensive use of Lombok to reduce boilerplate code.
+
+---
+
+## 🛠️ Tech Stack
+- **Framework**: Spring Boot 3.5.9
+- **Database**: H2 (In-memory) for simplified evaluation
+- **Documentation**: SpringDoc OpenAPI (Swagger UI)
+- **Validation**: Jakarta Bean Validation
+- **Logging**: SLF4J + Logback
+
+---
+
+## 🧪 Testing
+The project includes comprehensive unit tests covering happy paths and edge cases (e.g., member inactive, insufficient stock, payment failures).
+
+```bash
+# Run tests
+./gradlew test
+```
+
+Currently, **14 test cases** are implemented and passing.
+
+---
+
+## 📌 API Endpoints Summary
+
+| Operation | Method | Endpoint | Description |
+|-----------|--------|----------|-------------|
+| Create Order | `POST` | `/api/orders` | Validates data and processes payment |
+| Get Order | `GET`  | `/api/orders/{id}` | Retrieves order details |
+| List Orders | `GET`  | `/api/orders` | Paginated list of all orders |
+| Cancel Order | `PUT`  | `/api/orders/{id}` | Cancels an existing order |
+
+---
+
+Developed as a part of the Backend Developer Assessment.

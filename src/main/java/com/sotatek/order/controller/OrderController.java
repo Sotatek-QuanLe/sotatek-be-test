@@ -4,6 +4,8 @@ import com.sotatek.order.model.dto.request.CreateOrderRequest;
 import com.sotatek.order.model.dto.request.UpdateOrderRequest;
 import com.sotatek.order.model.dto.response.OrderResponse;
 import com.sotatek.order.service.OrderService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -16,23 +18,27 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
+@Tag(name = "Order Management", description = "Endpoints for creating, retrieving, and cancelling orders")
 public class OrderController {
 
     private final OrderService orderService;
 
     @PostMapping
+    @Operation(summary = "Create a new order", description = "Validates member, products, stock and processes payment")
     public ResponseEntity<OrderResponse> createOrder(@NonNull @Valid @RequestBody CreateOrderRequest request) {
         OrderResponse response = orderService.createOrder(request);
         return new ResponseEntity<>(response, HttpStatus.CREATED);
     }
 
     @GetMapping("/{id}")
+    @Operation(summary = "Get order by ID")
     public ResponseEntity<OrderResponse> getOrder(@PathVariable @NonNull Long id) {
         OrderResponse response = orderService.getOrder(id);
         return ResponseEntity.ok(response);
     }
 
     @GetMapping
+    @Operation(summary = "List orders with pagination")
     public ResponseEntity<Page<OrderResponse>> listOrders(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "10") int size) {
@@ -41,6 +47,7 @@ public class OrderController {
     }
 
     @PutMapping("/{id}")
+    @Operation(summary = "Cancel an order", description = "Only PENDING/CONFIRMED orders can be cancelled")
     public ResponseEntity<OrderResponse> cancelOrder(
             @PathVariable @NonNull Long id,
             @Valid @RequestBody @NonNull UpdateOrderRequest request) {
