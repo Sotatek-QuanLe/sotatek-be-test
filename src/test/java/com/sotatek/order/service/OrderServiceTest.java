@@ -130,6 +130,13 @@ class OrderServiceTest {
     }
 
     @Test
+    void createOrder_MemberNotFound() {
+        when(memberClient.getMember(anyString())).thenReturn(null);
+
+        assertThrows(MemberNotFoundException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
     void createOrder_InsufficientStock() {
         when(memberClient.getMember(anyString())).thenReturn(activeMember);
         when(productClient.getProduct(anyString())).thenReturn(availableProduct);
@@ -149,10 +156,7 @@ class OrderServiceTest {
         PaymentResponse failedPayment = PaymentResponse.builder().id(1L).status("FAILED").build();
         when(paymentClient.createPayment(any(PaymentRequest.class))).thenReturn(failedPayment);
 
-        OrderResponse response = orderService.createOrder(createRequest);
-
-        assertNotNull(response);
-        assertEquals(OrderStatus.PENDING, response.getStatus()); // Stays PENDING
+        assertThrows(PaymentFailedException.class, () -> orderService.createOrder(createRequest));
         verify(orderRepository, times(1)).save(any(Order.class));
     }
 
@@ -179,6 +183,14 @@ class OrderServiceTest {
     }
 
     @Test
+    void createOrder_ProductNotFound() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(null);
+
+        assertThrows(ProductNotFoundException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
     void cancelOrder_Success() {
         when(orderRepository.findById(anyLong())).thenReturn(Optional.of(order));
         when(orderRepository.save(any(Order.class))).thenReturn(order);
@@ -190,5 +202,14 @@ class OrderServiceTest {
 
         assertNotNull(response);
         assertEquals(OrderStatus.CANCELLED, response.getStatus());
+    }
+
+    @Test
+    void cancelOrder_OrderNotFound() {
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.empty());
+        UpdateOrderRequest updateRequest = new UpdateOrderRequest();
+        updateRequest.setStatus(OrderStatus.CANCELLED);
+
+        assertThrows(OrderNotFoundException.class, () -> orderService.cancelOrder(1L, updateRequest));
     }
 }

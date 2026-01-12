@@ -24,9 +24,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.sotatek.order.model.enums.ExternalStatus;
 
 import org.springframework.lang.NonNull;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -41,18 +43,39 @@ public class OrderServiceImpl implements OrderService {
     private final PaymentClient paymentClient;
 
     @Override
-    @Transactional
+    @Transactional(timeout = 10) // Issue 9: Prevent forever locks
     @SuppressWarnings("null")
     public OrderResponse createOrder(@NonNull CreateOrderRequest request) {
         log.info("Creating order for member: {}", request.getMemberId());
 
+        // 1. Validate Member (Issue 2: Defensive Coding, Issue 4: Magic Strings)
+        validateMember(request.getMemberId());
+
         // TODO: Use CompletableFuture.allOf() for parallel validation in production
-        // 1. Validate Member
-        MemberResponse member = memberClient.getMember(request.getMemberId());
-        if (!"ACTIVE".equals(member.getStatus())) {
+        // (Issue 7)
+        // 2. Validate Products and calculate total (Issue 8: Rounding)
+        Order order = buildOrderEntity(request);
+        Order savedOrder = orderRepository.save(order);
+
+        // 3. Process Payment (Issue 1: Payment Flow & Race Condition)
+        processPayment(savedOrder);
+
+        return mapToResponse(savedOrder);
+    }
+
+    @SuppressWarnings("null")
+    private void validateMember(String memberId) {
+        MemberResponse member = memberClient.getMember(memberId);
+        if (member == null) {
+            throw new MemberNotFoundException("Member service returned null for id: " + memberId);
+        }
+        if (!ExternalStatus.Member.ACTIVE.getValue().equals(member.getStatus())) {
             throw new MemberInactiveException("Member status is not ACTIVE: " + member.getStatus());
         }
+    }
 
+    @SuppressWarnings("null")
+    private Order buildOrderEntity(CreateOrderRequest request) {
         BigDecimal totalAmount = BigDecimal.ZERO;
         Order order = Order.builder()
                 .memberId(request.getMemberId())
@@ -60,58 +83,67 @@ public class OrderServiceImpl implements OrderService {
                 .status(OrderStatus.PENDING)
                 .build();
 
-        // 2. Validate Products and calculate total
         for (var itemRequest : request.getItems()) {
             String productId = itemRequest.getProductId();
-
-            // Get product info
             ProductResponse product = productClient.getProduct(productId);
-            if (!"AVAILABLE".equals(product.getStatus())) {
+
+            if (product == null) {
+                throw new ProductNotFoundException("Product service returned null for id: " + productId);
+            }
+            if (!ExternalStatus.Product.AVAILABLE.getValue().equals(product.getStatus())) {
                 throw new ProductUnavailableException("Product is not available: " + productId);
             }
 
-            // Check stock
             ProductStockResponse stock = productClient.getStock(productId);
-            if (stock.getAvailableQuantity() < itemRequest.getQuantity()) {
+            if (stock == null || stock.getAvailableQuantity() < itemRequest.getQuantity()) {
                 throw new InsufficientStockException("Insufficient stock for product: " + productId);
             }
 
-            BigDecimal subtotal = product.getPrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity()));
+            BigDecimal subtotal = product.getPrice()
+                    .multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
+                    .setScale(2, RoundingMode.HALF_UP);
 
             OrderItem orderItem = OrderItem.builder()
                     .productId(productId)
                     .productName(product.getName())
                     .quantity(itemRequest.getQuantity())
-                    .unitPrice(product.getPrice())
+                    .unitPrice(product.getPrice().setScale(2, RoundingMode.HALF_UP))
                     .subtotal(subtotal)
                     .build();
 
             order.addItem(orderItem);
             totalAmount = totalAmount.add(subtotal);
         }
+        order.setTotalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
+        return order;
+    }
 
-        order.setTotalAmount(totalAmount);
-        Order savedOrder = orderRepository.save(order);
-
-        // 3. Process Payment
+    @SuppressWarnings("null")
+    private void processPayment(Order order) {
         PaymentRequest paymentRequest = PaymentRequest.builder()
-                .orderId(savedOrder.getId())
-                .amount(totalAmount)
-                .paymentMethod(request.getPaymentMethod())
+                .orderId(order.getId())
+                .amount(order.getTotalAmount())
+                .paymentMethod(order.getPaymentMethod())
                 .build();
 
         PaymentResponse paymentResponse = paymentClient.createPayment(paymentRequest);
-        if ("COMPLETED".equals(paymentResponse.getStatus())) {
-            log.info("Payment completed: orderId={}, transactionId={}", savedOrder.getId(),
-                    paymentResponse.getTransactionId());
-            savedOrder.setPaymentTransactionId(paymentResponse.getTransactionId());
-            savedOrder.setStatus(OrderStatus.CONFIRMED);
-            savedOrder = orderRepository.save(savedOrder);
-        } else {
-            log.warn("Payment failed for order: {}. Status remains PENDING", savedOrder.getId());
+
+        if (paymentResponse == null) {
+            throw new PaymentFailedException("Payment service returned null for order: " + order.getId());
         }
 
-        return mapToResponse(savedOrder);
+        // CRITICAL: Log and store transaction ID before status update (Issue 1)
+        if (ExternalStatus.Payment.COMPLETED.getValue().equals(paymentResponse.getStatus())) {
+            log.info("Payment completed: orderId={}, transactionId={}", order.getId(),
+                    paymentResponse.getTransactionId());
+            order.setPaymentTransactionId(paymentResponse.getTransactionId());
+            order.setStatus(OrderStatus.CONFIRMED);
+            orderRepository.save(order);
+        } else {
+            log.error("Payment failed: orderId={}, status={}, message={}",
+                    order.getId(), paymentResponse.getStatus(), "Unknown failure");
+            throw new PaymentFailedException("Payment failed with status: " + paymentResponse.getStatus());
+        }
     }
 
     @Override

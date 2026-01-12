@@ -5,6 +5,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -15,6 +16,7 @@ public class CreateOrderRequest {
     private String memberId;
 
     @NotEmpty(message = "Order must have at least one item")
+    @Size(max = 50, message = "Order cannot exceed 50 items")
     @Valid
     private List<OrderItemRequest> items;
 

@@ -14,18 +14,17 @@ spring:
   jpa:
     hibernate:
       ddl-auto: create-drop
-    show-sql: true
+    show-sql: false
     properties:
-      "[hibernate.format_sql]": true
+      "[hibernate.format_sql]": false
     open-in-view: false
 
   h2:
     console:
-      enabled: true
-      path: /h2-console
+      enabled: false
 
 logging:
   level:
     root: INFO
-    "[com.sotatek.order]": DEBUG
-    "[org.hibernate.SQL]": DEBUG
+    "[com.sotatek.order]": INFO
+    "[org.hibernate.SQL]": INFO
