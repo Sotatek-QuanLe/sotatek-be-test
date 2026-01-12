@@ -969,8 +969,521 @@ public class ErrorResponse {
 - [ ] Input sanitization
 
 ### ✅ Tiêu chí DONE
-- [ ] Sort parameter working
-- [ ] Trace ID in error responses
-- [ ] Actuator endpoints accessible
+- [x] Sort parameter working
+- [x] Trace ID in error responses
+- [x] Actuator endpoints accessible
 - [ ] (Optional) Basic security configured
+
+---
+
+## Phase 10: Final Polish & Bonus Points (P0 - Required for submission)
+
+### 🎯 Mục tiêu
+Hoàn thiện các items còn thiếu để đạt điểm tối đa theo README requirements.
+
+### 📊 Priority Matrix
+
+| Priority | Task | Impact | Effort |
+|----------|------|--------|--------|
+| 🔴 P0 | Docker Support | +++ Bonus Point | 15 phút |
+| 🔴 P0 | Integration Tests | ++ Testing Score | 30 phút |
+| 🟡 P1 | Update README (Design Decisions) | + Documentation | 15 phút |
+| 🟢 P2 | Additional Unit Tests | + Coverage | 20 phút |
+
+---
+
+### 10.1. Docker Support (🔴 BONUS POINT - Required)
+
+**Issue**: README yêu cầu Docker support như bonus point
+**Impact**: +++ (Bonus điểm trực tiếp)
+
+#### Files cần tạo:
+
+**`Dockerfile`**:
+```dockerfile
+# Multi-stage build for smaller image
+FROM eclipse-temurin:17-jdk-alpine AS builder
+WORKDIR /app
+COPY gradle gradle
+COPY gradlew build.gradle settings.gradle ./
+COPY src src
+RUN chmod +x gradlew && ./gradlew build -x test --no-daemon
+
+FROM eclipse-temurin:17-jre-alpine
+WORKDIR /app
+COPY --from=builder /app/build/libs/*.jar app.jar
+
+# Add non-root user for security
+RUN addgroup -g 1001 appgroup && adduser -u 1001 -G appgroup -D appuser
+USER appuser
+
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
+  CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["java", "-jar", "app.jar"]
+```
+
+**`docker-compose.yml`**:
+```yaml
+version: '3.8'
+
+services:
+  order-service:
+    build: .
+    container_name: order-service
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - JAVA_OPTS=-Xmx512m -Xms256m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # Optional: PostgreSQL for production-like setup
+  # postgres:
+  #   image: postgres:15-alpine
+  #   environment:
+  #     POSTGRES_DB: orderdb
+  #     POSTGRES_USER: order
+  #     POSTGRES_PASSWORD: secret
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+
+# volumes:
+#   postgres_data:
+```
+
+**`.dockerignore`**:
+```
+.git
+.gitignore
+.gradle
+build
+*.md
+docs
+.idea
+*.iml
+```
+
+#### Verify commands:
+```bash
+# Build image
+docker build -t order-service .
+
+# Run container
+docker-compose up -d
+
+# Check health
+curl http://localhost:8080/actuator/health
+
+# View logs
+docker-compose logs -f
+```
+
+### ✅ Tiêu chí DONE - Docker
+- [ ] `docker build` thành công
+- [ ] `docker-compose up` chạy được
+- [ ] Health check pass
+- [ ] Container restart tự động
+
+---
+
+### 10.2. Integration Tests (🔴 HIGH PRIORITY)
+
+**Issue**: README nói "Integration tests (optional but appreciated)"
+**Impact**: ++ Testing score
+
+#### File: `src/test/java/com/sotatek/order/controller/OrderControllerIntegrationTest.java`
+
+```java
+package com.sotatek.order.controller;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sotatek.order.model.dto.request.CreateOrderRequest;
+import com.sotatek.order.model.dto.request.OrderItemRequest;
+import com.sotatek.order.model.dto.request.UpdateOrderRequest;
+import com.sotatek.order.model.enums.OrderStatus;
+import com.sotatek.order.model.enums.PaymentMethod;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
+
+import java.util.List;
+import java.util.UUID;
+
+import static org.hamcrest.Matchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+@SpringBootTest
+@AutoConfigureMockMvc
+class OrderControllerIntegrationTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Test
+    void createOrder_Success_Returns201() throws Exception {
+        CreateOrderRequest request = createValidRequest();
+
+        mockMvc.perform(post("/api/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").exists())
+                .andExpect(jsonPath("$.memberId").value("M001"))
+                .andExpect(jsonPath("$.status").value("CONFIRMED"))
+                .andExpect(jsonPath("$.totalAmount").isNumber());
+    }
+
+    @Test
+    void createOrder_InvalidMember_Returns404() throws Exception {
+        CreateOrderRequest request = createValidRequest();
+        request.setMemberId("not-found");
+
+        mockMvc.perform(post("/api/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("MEMBER_NOT_FOUND"));
+    }
+
+    @Test
+    void createOrder_InactiveMember_Returns400() throws Exception {
+        CreateOrderRequest request = createValidRequest();
+        request.setMemberId("inactive-member");
+
+        mockMvc.perform(post("/api/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("MEMBER_INACTIVE"));
+    }
+
+    @Test
+    void createOrder_ValidationError_Returns400() throws Exception {
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setMemberId(""); // Invalid: blank
+        request.setItems(List.of());
+        request.setPaymentMethod(PaymentMethod.CREDIT_CARD);
+
+        mockMvc.perform(post("/api/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors").exists());
+    }
+
+    @Test
+    void createOrder_IdempotencyKey_ReturnsSameResponse() throws Exception {
+        CreateOrderRequest request = createValidRequest();
+        String idempotencyKey = UUID.randomUUID().toString();
+
+        // First request
+        MvcResult first = mockMvc.perform(post("/api/orders")
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        // Second request with same key
+        MvcResult second = mockMvc.perform(post("/api/orders")
+                .header("Idempotency-Key", idempotencyKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        // Should return same response
+        assertEquals(first.getResponse().getContentAsString(),
+                     second.getResponse().getContentAsString());
+    }
+
+    @Test
+    void getOrder_Exists_Returns200() throws Exception {
+        // First create an order
+        CreateOrderRequest request = createValidRequest();
+        MvcResult createResult = mockMvc.perform(post("/api/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        // Extract ID from response
+        String response = createResult.getResponse().getContentAsString();
+        Long orderId = objectMapper.readTree(response).get("id").asLong();
+
+        // Get order
+        mockMvc.perform(get("/api/orders/{id}", orderId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(orderId))
+                .andExpect(jsonPath("$.memberId").value("M001"));
+    }
+
+    @Test
+    void getOrder_NotFound_Returns404() throws Exception {
+        mockMvc.perform(get("/api/orders/{id}", 99999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.error").value("ORDER_NOT_FOUND"));
+    }
+
+    @Test
+    void listOrders_WithPagination_Returns200() throws Exception {
+        mockMvc.perform(get("/api/orders")
+                .param("page", "0")
+                .param("size", "10")
+                .param("sortBy", "createdAt")
+                .param("sortDir", "desc"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.pageable").exists())
+                .andExpect(jsonPath("$.totalElements").isNumber());
+    }
+
+    @Test
+    void cancelOrder_Success_Returns200() throws Exception {
+        // First create an order
+        CreateOrderRequest createReq = createValidRequest();
+        MvcResult createResult = mockMvc.perform(post("/api/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(createReq)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        Long orderId = objectMapper.readTree(
+            createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        // Cancel order
+        UpdateOrderRequest cancelReq = new UpdateOrderRequest();
+        cancelReq.setStatus(OrderStatus.CANCELLED);
+
+        mockMvc.perform(put("/api/orders/{id}", orderId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(cancelReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    @Test
+    void cancelOrder_AlreadyCancelled_Returns400() throws Exception {
+        // Create and cancel an order first
+        CreateOrderRequest createReq = createValidRequest();
+        MvcResult createResult = mockMvc.perform(post("/api/orders")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(createReq)))
+                .andReturn();
+
+        Long orderId = objectMapper.readTree(
+            createResult.getResponse().getContentAsString()).get("id").asLong();
+
+        UpdateOrderRequest cancelReq = new UpdateOrderRequest();
+        cancelReq.setStatus(OrderStatus.CANCELLED);
+
+        // First cancel
+        mockMvc.perform(put("/api/orders/{id}", orderId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(cancelReq)));
+
+        // Second cancel - should fail
+        mockMvc.perform(put("/api/orders/{id}", orderId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(cancelReq)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("INVALID_ORDER_STATUS"));
+    }
+
+    @Test
+    void errorResponse_ContainsTraceId() throws Exception {
+        mockMvc.perform(get("/api/orders/{id}", 99999L))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.traceId").exists())
+                .andExpect(jsonPath("$.timestamp").exists());
+    }
+
+    private CreateOrderRequest createValidRequest() {
+        OrderItemRequest item = new OrderItemRequest();
+        item.setProductId("P001");
+        item.setQuantity(2);
+
+        CreateOrderRequest request = new CreateOrderRequest();
+        request.setMemberId("M001");
+        request.setItems(List.of(item));
+        request.setPaymentMethod(PaymentMethod.CREDIT_CARD);
+        return request;
+    }
+
+    private static void assertEquals(String expected, String actual) {
+        if (!expected.equals(actual)) {
+            throw new AssertionError("Expected: " + expected + " but was: " + actual);
+        }
+    }
+}
+```
+
+### ✅ Tiêu chí DONE - Integration Tests
+- [ ] Tất cả integration tests pass
+- [ ] Test coverage cho happy path + error cases
+- [ ] Tối thiểu 10 integration test cases
+- [ ] Tests chạy với `./gradlew test`
+
+---
+
+### 10.3. Update README - Design Decisions (🟡 MEDIUM)
+
+**Issue**: README hiện tại là template gốc, chưa có design decisions
+**Impact**: + Documentation score
+
+#### Thêm vào cuối README.md:
+
+```markdown
+---
+
+## Implementation Details
+
+### Design Decisions
+
+1. **Architecture**: Layered architecture với clear separation
+   - Controller → Service → Repository
+   - Client interfaces cho external services (dễ mock/swap)
+
+2. **Database**: H2 in-memory với Flyway migrations
+   - Production-ready migration scripts
+   - Easy to switch to PostgreSQL
+
+3. **External Services**: Mock implementations với deterministic behavior
+   - `memberId = "not-found"` → MemberNotFoundException
+   - `productId = "out-of-stock"` → InsufficientStockException
+   - `amount > 10000` → Payment FAILED
+
+4. **Resilience Patterns**:
+   - Circuit Breaker (Resilience4j) cho external calls
+   - Retry với exponential backoff
+   - Fallback methods khi service unavailable
+
+5. **Idempotency**:
+   - `Idempotency-Key` header support
+   - Caffeine cache với TTL 10 phút
+
+6. **Concurrency**:
+   - Optimistic locking (`@Version`) cho Order entity
+   - Pessimistic locking cho cancel operation
+
+### API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/orders` | Create new order |
+| GET | `/api/orders/{id}` | Get order by ID |
+| GET | `/api/orders` | List orders (paginated) |
+| PUT | `/api/orders/{id}` | Cancel order |
+
+### Running the Application
+
+```bash
+# Build
+./gradlew build
+
+# Run tests
+./gradlew test
+
+# Start application
+./gradlew bootRun
+
+# With Docker
+docker-compose up -d
+```
+
+### Available Endpoints
+
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- Actuator Health: http://localhost:8080/actuator/health
+- Metrics: http://localhost:8080/actuator/prometheus
+```
+
+### ✅ Tiêu chí DONE - README
+- [ ] Design decisions documented
+- [ ] API endpoints listed
+- [ ] Run instructions clear
+- [ ] Docker instructions included
+
+---
+
+### 10.4. Additional Unit Tests (🟢 LOW - Already done)
+
+**Status**: ✅ COMPLETED (27 tests)
+
+Test cases đã được bổ sung:
+- `createOrder_MultipleItems_Success`
+- `createOrder_StockReturnsNull`
+- `createOrder_PaymentReturnsNull`
+- `createOrder_VerifyTotalAmountCalculation`
+- `createOrder_ProductOutOfStock_ZeroQuantity`
+- `cancelOrder_OrderNotFound`
+- `cancelOrder_InvalidStatus_NotCancelled`
+- `cancelOrder_RefundFailed`
+- `cancelOrder_PaymentFailedOrder`
+
+---
+
+## 🚀 Final Submission Checklist
+
+```
+CORE FUNCTIONALITY:
+[x] ./gradlew build passes
+[x] ./gradlew test passes (27 tests)
+[x] Application starts without error
+[x] All CRUD endpoints work
+
+EXTERNAL INTEGRATION:
+[x] Member validation
+[x] Product validation
+[x] Payment processing
+[x] Refund on cancel
+
+RESILIENCE:
+[x] Circuit Breaker
+[x] Retry with exponential backoff
+[x] Fallback methods
+[x] Idempotency key
+
+CODE QUALITY:
+[x] Error response format consistent
+[x] HTTP status codes correct
+[x] Logging with traceId
+[x] Clean package structure
+
+BONUS POINTS:
+[x] Circuit Breaker pattern ✓
+[x] Retry mechanism ✓
+[x] Logging & monitoring ✓
+[ ] Docker support ← TODO
+[x] Database migrations ✓
+
+DOCUMENTATION:
+[x] Swagger UI works
+[ ] README updated ← TODO
+
+TESTING:
+[x] Unit tests (27 tests)
+[ ] Integration tests ← TODO
+```
+
+**Estimated Score: 87% → Target 95%**
 
