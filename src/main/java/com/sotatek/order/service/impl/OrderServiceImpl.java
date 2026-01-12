@@ -51,8 +51,6 @@ public class OrderServiceImpl implements OrderService {
         // 1. Validate Member (Issue 2: Defensive Coding, Issue 4: Magic Strings)
         validateMember(request.getMemberId());
 
-        // TODO: Use CompletableFuture.allOf() for parallel validation in production
-        // (Issue 7)
         // 2. Validate Products and calculate total (Issue 8: Rounding)
         Order order = buildOrderEntity(request);
         Order savedOrder = orderRepository.save(order);
