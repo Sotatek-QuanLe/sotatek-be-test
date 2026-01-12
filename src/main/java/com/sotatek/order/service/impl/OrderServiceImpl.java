@@ -57,7 +57,7 @@ public class OrderServiceImpl implements OrderService {
         Order order = buildOrderEntity(request);
         Order savedOrder = orderRepository.save(order);
 
-        // 3. Process Payment (Issue 1: Payment Flow & Race Condition)
+        // 3. Process Payment
         processPayment(savedOrder);
 
         return mapToResponse(savedOrder);

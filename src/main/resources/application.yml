@@ -13,11 +13,15 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
     show-sql: false
     properties:
       "[hibernate.format_sql]": false
     open-in-view: false
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
 
   h2:
     console:
