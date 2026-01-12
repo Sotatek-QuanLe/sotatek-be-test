@@ -1,0 +1,99 @@
+openapi: 3.0.3
+info:
+  title: Member Service API
+  description: |
+    Member Service provides member information for the Order Service.
+
+    **Note**: This service is external to your implementation. You should mock this service
+    when developing and testing your Order Service.
+  version: 1.0.0
+
+servers:
+  - url: http://member-service:8081
+    description: Member Service (Mock this in your implementation)
+
+paths:
+  /api/members/{memberId}:
+    get:
+      summary: Get member by ID
+      description: |
+        Retrieves member information by member ID.
+        Use this endpoint to validate if a member exists and is active before creating an order.
+      operationId: getMemberById
+      tags:
+        - Members
+      parameters:
+        - name: memberId
+          in: path
+          required: true
+          description: Unique identifier of the member
+          schema:
+            type: integer
+            format: int64
+            example: 1001
+      responses:
+        '200':
+          description: Member found successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+              example:
+                id: 1001
+                name: "John Doe"
+                email: "john.doe@example.com"
+                status: "ACTIVE"
+                grade: "GOLD"
+        '404':
+          description: Member not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "MEMBER_NOT_FOUND"
+                message: "Member with id 1001 not found"
+
+components:
+  schemas:
+    Member:
+      type: object
+      required:
+        - id
+        - name
+        - email
+        - status
+        - grade
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique identifier of the member
+        name:
+          type: string
+          description: Full name of the member
+        email:
+          type: string
+          format: email
+          description: Email address of the member
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE, SUSPENDED]
+          description: Current status of the member
+        grade:
+          type: string
+          enum: [BRONZE, SILVER, GOLD, PLATINUM]
+          description: Membership grade
+
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Error code
+        message:
+          type: string
+          description: Human-readable error message
