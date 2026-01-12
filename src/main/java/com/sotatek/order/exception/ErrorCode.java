@@ -1,0 +1,14 @@
+package com.sotatek.order.exception;
+
+public enum ErrorCode {
+    ORDER_NOT_FOUND,
+    MEMBER_NOT_FOUND,
+    MEMBER_INACTIVE,
+    PRODUCT_NOT_FOUND,
+    PRODUCT_UNAVAILABLE,
+    INSUFFICIENT_STOCK,
+    INVALID_ORDER_STATUS,
+    PAYMENT_FAILED,
+    VALIDATION_ERROR,
+    INTERNAL_ERROR
+}

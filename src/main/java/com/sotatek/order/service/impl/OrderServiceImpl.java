@@ -42,9 +42,11 @@ public class OrderServiceImpl implements OrderService {
 
     @Override
     @Transactional
+    @SuppressWarnings("null")
     public OrderResponse createOrder(@NonNull CreateOrderRequest request) {
         log.info("Creating order for member: {}", request.getMemberId());
 
+        // TODO: Use CompletableFuture.allOf() for parallel validation in production
         // 1. Validate Member
         MemberResponse member = memberClient.getMember(request.getMemberId());
         if (!"ACTIVE".equals(member.getStatus())) {
@@ -100,7 +102,9 @@ public class OrderServiceImpl implements OrderService {
 
         PaymentResponse paymentResponse = paymentClient.createPayment(paymentRequest);
         if ("COMPLETED".equals(paymentResponse.getStatus())) {
-            log.info("Payment successful for order: {}", savedOrder.getId());
+            log.info("Payment completed: orderId={}, transactionId={}", savedOrder.getId(),
+                    paymentResponse.getTransactionId());
+            savedOrder.setPaymentTransactionId(paymentResponse.getTransactionId());
             savedOrder.setStatus(OrderStatus.CONFIRMED);
             savedOrder = orderRepository.save(savedOrder);
         } else {
