@@ -94,7 +94,7 @@ class OrderServiceTest {
         availableProduct = ProductResponse.builder().id(1L).name("Mock Product").price(new BigDecimal("99.99"))
                 .status("AVAILABLE").build();
         abundantStock = ProductStockResponse.builder().productId("P001").availableQuantity(100).build();
-        completedPayment = PaymentResponse.builder().id(1L).status("COMPLETED").build();
+        completedPayment = PaymentResponse.builder().id(1L).status("COMPLETED").transactionId("TXN-123").build();
     }
 
     @Test
@@ -108,7 +108,7 @@ class OrderServiceTest {
         OrderResponse response = orderService.createOrder(createRequest);
 
         assertNotNull(response);
-        assertEquals(OrderStatus.CONFIRMED, response.getStatus()); // Should be CONFIRMED after payment
+        assertEquals(OrderStatus.CONFIRMED, response.getStatus());
         verify(orderRepository, times(2)).save(any(Order.class));
     }
 
@@ -121,6 +121,13 @@ class OrderServiceTest {
     }
 
     @Test
+    void createOrder_MemberNotFound() {
+        when(memberClient.getMember(anyString())).thenReturn(null);
+
+        assertThrows(MemberNotFoundException.class, () -> orderService.createOrder(createRequest));
+    }
+
+    @Test
     void createOrder_ProductUnavailable() {
         when(memberClient.getMember(anyString())).thenReturn(activeMember);
         availableProduct.setStatus("DISCONTINUED");
@@ -130,17 +137,18 @@ class OrderServiceTest {
     }
 
     @Test
-    void createOrder_MemberNotFound() {
-        when(memberClient.getMember(anyString())).thenReturn(null);
+    void createOrder_ProductNotFound() {
+        when(memberClient.getMember(anyString())).thenReturn(activeMember);
+        when(productClient.getProduct(anyString())).thenReturn(null);
 
-        assertThrows(MemberNotFoundException.class, () -> orderService.createOrder(createRequest));
+        assertThrows(ProductNotFoundException.class, () -> orderService.createOrder(createRequest));
     }
 
     @Test
     void createOrder_InsufficientStock() {
         when(memberClient.getMember(anyString())).thenReturn(activeMember);
         when(productClient.getProduct(anyString())).thenReturn(availableProduct);
-        abundantStock.setAvailableQuantity(1); // Only 1 available, but requested 2
+        abundantStock.setAvailableQuantity(1);
         when(productClient.getStock(anyString())).thenReturn(abundantStock);
 
         assertThrows(InsufficientStockException.class, () -> orderService.createOrder(createRequest));
@@ -172,6 +180,12 @@ class OrderServiceTest {
     }
 
     @Test
+    void getOrder_NotFound() {
+        when(orderRepository.findById(anyLong())).thenReturn(Optional.empty());
+        assertThrows(OrderNotFoundException.class, () -> orderService.getOrder(1L));
+    }
+
+    @Test
     void listOrders_Success() {
         Page<Order> orderPage = new PageImpl<>(List.of(order));
         when(orderRepository.findAll(any(PageRequest.class))).thenReturn(orderPage);
@@ -183,11 +197,11 @@ class OrderServiceTest {
     }
 
     @Test
-    void createOrder_ProductNotFound() {
-        when(memberClient.getMember(anyString())).thenReturn(activeMember);
-        when(productClient.getProduct(anyString())).thenReturn(null);
-
-        assertThrows(ProductNotFoundException.class, () -> orderService.createOrder(createRequest));
+    void listOrders_Empty() {
+        when(orderRepository.findAll(any(PageRequest.class))).thenReturn(new PageImpl<>(Collections.emptyList()));
+        Page<OrderResponse> response = orderService.listOrders(PageRequest.of(0, 10));
+        assertNotNull(response);
+        assertTrue(response.getContent().isEmpty());
     }
 
     @Test
