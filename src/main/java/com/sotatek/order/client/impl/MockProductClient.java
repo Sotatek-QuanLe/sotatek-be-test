@@ -50,12 +50,15 @@ public class MockProductClient implements ProductClient {
                 .build();
     }
 
-    public ProductResponse productFallback(String productId, Throwable t) {
+    public ProductResponse productFallback(String productId, Throwable t) throws Throwable {
+        if (t instanceof ProductNotFoundException) {
+            throw t;
+        }
         log.error("Product service fallback for id: {}, error: {}", productId, t.getMessage());
         throw new ServiceUnavailableException("Product service is temporarily unavailable: " + t.getMessage());
     }
 
-    public ProductStockResponse stockFallback(String productId, Throwable t) {
+    public ProductStockResponse stockFallback(String productId, Throwable t) throws Throwable {
         log.error("Stock service fallback for id: {}, error: {}", productId, t.getMessage());
         throw new ServiceUnavailableException("Stock service is temporarily unavailable: " + t.getMessage());
     }

@@ -34,7 +34,10 @@ public class MockMemberClient implements MemberClient {
                 .build();
     }
 
-    public MemberResponse memberFallback(String memberId, Throwable t) {
+    public MemberResponse memberFallback(String memberId, Throwable t) throws Throwable {
+        if (t instanceof MemberNotFoundException) {
+            throw t;
+        }
         log.error("Member service fallback for id: {}, error: {}", memberId, t.getMessage());
         throw new ServiceUnavailableException("Member service is temporarily unavailable: " + t.getMessage());
     }
